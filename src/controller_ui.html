@@ -1,0 +1,498 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Roof Controller Hub</title>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/nipplejs/0.10.1/nipplejs.min.js"></script>
+  <style>
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+    :root {
+      --bg: #0d1117;
+      --panel: #18202b;
+      --panel-2: #111821;
+      --line: #2e3946;
+      --text: #e8eef5;
+      --muted: #95a2b3;
+      --accent: #3ecf8e;
+      --accent-2: #f59e0b;
+      --danger: #ef4444;
+      --blue: #38bdf8;
+    }
+    body {
+      font-family: "Segoe UI", system-ui, sans-serif;
+      background:
+        radial-gradient(circle at top right, rgba(62, 207, 142, 0.18), transparent 28%),
+        linear-gradient(180deg, #091017 0%, #0d1117 100%);
+      color: var(--text);
+      min-height: 100vh;
+      display: flex;
+      flex-direction: column;
+    }
+    header {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 16px;
+      padding: 16px 24px;
+      border-bottom: 1px solid var(--line);
+      background: rgba(17, 24, 33, 0.85);
+      backdrop-filter: blur(12px);
+    }
+    header h1 {
+      font-size: 1.1rem;
+      letter-spacing: 0.08em;
+      text-transform: uppercase;
+    }
+    .status-pill {
+      display: inline-flex;
+      align-items: center;
+      gap: 8px;
+      background: var(--panel);
+      border: 1px solid var(--line);
+      border-radius: 999px;
+      padding: 8px 14px;
+      color: var(--muted);
+      font-size: 0.82rem;
+    }
+    .status-dot {
+      width: 10px;
+      height: 10px;
+      border-radius: 50%;
+      background: var(--danger);
+      box-shadow: 0 0 12px rgba(239, 68, 68, 0.45);
+    }
+    .status-dot.connected {
+      background: var(--accent);
+      box-shadow: 0 0 16px rgba(62, 207, 142, 0.55);
+    }
+    .layout {
+      flex: 1;
+      display: grid;
+      grid-template-columns: minmax(320px, 380px) 1fr;
+      min-height: 0;
+    }
+    .sidebar {
+      display: flex;
+      flex-direction: column;
+      gap: 18px;
+      padding: 20px;
+      background: rgba(17, 24, 33, 0.74);
+      border-right: 1px solid var(--line);
+      overflow-y: auto;
+    }
+    .panel {
+      background: linear-gradient(180deg, rgba(24, 32, 43, 0.95), rgba(17, 24, 33, 0.95));
+      border: 1px solid var(--line);
+      border-radius: 16px;
+      padding: 16px;
+    }
+    .section-title {
+      font-size: 0.74rem;
+      font-weight: 700;
+      letter-spacing: 0.14em;
+      text-transform: uppercase;
+      color: var(--muted);
+      margin-bottom: 12px;
+    }
+    .field-row {
+      display: flex;
+      flex-direction: column;
+      gap: 6px;
+      margin-bottom: 12px;
+    }
+    label {
+      font-size: 0.85rem;
+      color: var(--muted);
+    }
+    select, input[type="number"], input[type="range"] { width: 100%; }
+    select, input[type="number"] {
+      border-radius: 10px;
+      border: 1px solid var(--line);
+      background: var(--panel-2);
+      color: var(--text);
+      padding: 10px 12px;
+      font-size: 0.92rem;
+    }
+    input[type="range"] { accent-color: var(--accent); }
+    .slider-meta {
+      display: flex;
+      justify-content: space-between;
+      color: var(--muted);
+      font-size: 0.8rem;
+      margin-top: 4px;
+    }
+    .btn-row {
+      display: flex;
+      gap: 8px;
+      flex-wrap: wrap;
+    }
+    button {
+      border: none;
+      border-radius: 10px;
+      padding: 10px 14px;
+      font-size: 0.9rem;
+      font-weight: 700;
+      cursor: pointer;
+    }
+    button:disabled { opacity: 0.4; cursor: not-allowed; }
+    .btn-primary { background: var(--accent); color: #04110b; }
+    .btn-danger { background: var(--danger); color: white; }
+    .btn-secondary { background: var(--panel-2); color: var(--text); border: 1px solid var(--line); }
+    .btn-warning { background: var(--accent-2); color: #241400; }
+    .mode-toggle {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 8px;
+    }
+    .mode-toggle button.active {
+      outline: 2px solid rgba(62, 207, 142, 0.38);
+      box-shadow: 0 0 0 4px rgba(62, 207, 142, 0.12);
+    }
+    .telem-grid {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 10px;
+    }
+    .telem-card {
+      background: rgba(13, 17, 23, 0.7);
+      border: 1px solid var(--line);
+      border-radius: 12px;
+      padding: 12px;
+    }
+    .telem-label {
+      font-size: 0.74rem;
+      color: var(--muted);
+      margin-bottom: 4px;
+    }
+    .telem-value {
+      font-size: 1.24rem;
+      font-weight: 700;
+      font-variant-numeric: tabular-nums;
+    }
+    .telem-value.speed { color: var(--blue); }
+    .telem-value.steer { color: var(--accent-2); }
+    .telem-value.throttle { color: var(--accent); }
+    .workspace {
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      padding: 24px;
+      position: relative;
+    }
+    .joystick-shell {
+      width: min(78vw, 720px);
+      aspect-ratio: 1;
+      max-height: calc(100vh - 140px);
+      border-radius: 28px;
+      border: 1px solid var(--line);
+      background: linear-gradient(180deg, rgba(24, 32, 43, 0.96), rgba(13, 17, 23, 0.98));
+      position: relative;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      overflow: hidden;
+    }
+    #joystick-zone {
+      width: min(54vw, 360px);
+      height: min(54vw, 360px);
+      max-width: 360px;
+      max-height: 360px;
+      border-radius: 50%;
+      border: 1px solid rgba(56, 189, 248, 0.2);
+      background: radial-gradient(circle, rgba(56, 189, 248, 0.12), rgba(0,0,0,0));
+      position: relative;
+    }
+    .axis-labels {
+      position: absolute;
+      inset: 0;
+      pointer-events: none;
+    }
+    .axis-label {
+      position: absolute;
+      font-size: 0.78rem;
+      color: var(--muted);
+      letter-spacing: 0.06em;
+      text-transform: uppercase;
+    }
+    .axis-label.top { top: 22px; left: 50%; transform: translateX(-50%); }
+    .axis-label.bottom { bottom: 22px; left: 50%; transform: translateX(-50%); }
+    .axis-label.left { left: 22px; top: 50%; transform: translateY(-50%); }
+    .axis-label.right { right: 22px; top: 50%; transform: translateY(-50%); }
+    .joystick-caption {
+      position: absolute;
+      bottom: 24px;
+      left: 24px;
+      color: var(--muted);
+      font-size: 0.86rem;
+      line-height: 1.5;
+    }
+    .log-table {
+      width: 100%;
+      border-collapse: collapse;
+      font-size: 0.82rem;
+    }
+    .log-table th, .log-table td {
+      padding: 8px 0;
+      text-align: left;
+      border-bottom: 1px solid rgba(46, 57, 70, 0.68);
+    }
+    .log-table th { color: var(--muted); font-weight: 700; }
+    .log-table a { color: var(--blue); text-decoration: none; }
+    .hint {
+      color: var(--muted);
+      font-size: 0.8rem;
+      line-height: 1.5;
+    }
+    @media (max-width: 980px) {
+      .layout { grid-template-columns: 1fr; }
+      .workspace { min-height: 520px; }
+      .joystick-shell { width: calc(100vw - 32px); }
+    }
+  </style>
+</head>
+<body>
+  <header>
+    <div>
+      <h1>Roof Controller Hub</h1>
+      <div style="font-size:0.85rem;color:var(--muted);margin-top:4px;">RP2350 control + roof-alignment telemetry</div>
+    </div>
+    <div class="status-pill">
+      <span id="status-dot" class="status-dot"></span>
+      <span id="status-text">Disconnected</span>
+    </div>
+  </header>
+  <div class="layout">
+    <aside class="sidebar">
+      <section class="panel">
+        <div class="section-title">Connection</div>
+        <div class="field-row">
+          <label for="port-select">Serial port</label>
+          <div class="btn-row" style="flex-wrap:nowrap;">
+            <select id="port-select" style="flex:1;"><option value="">Select port</option></select>
+            <button class="btn-secondary" onclick="refreshPorts()">Refresh</button>
+          </div>
+        </div>
+        <div class="field-row">
+          <label for="baud-input">Baud rate</label>
+          <input id="baud-input" type="number" value="115200" />
+        </div>
+        <div class="btn-row">
+          <button id="connect-btn" class="btn-primary" onclick="connectPort()">Connect</button>
+          <button id="disconnect-btn" class="btn-danger" onclick="disconnectPort()" disabled>Disconnect</button>
+        </div>
+      </section>
+      <section class="panel">
+        <div class="section-title">Drive Mode</div>
+        <div class="mode-toggle">
+          <button id="mode-manual" class="btn-secondary active" onclick="setMode('manual')">Manual</button>
+          <button id="mode-auto" class="btn-warning" onclick="setMode('auto')">Auto</button>
+        </div>
+        <div class="hint" style="margin-top:10px;">Auto mode sends the firmware mode command and blocks manual steering or throttle overrides.</div>
+      </section>
+      <section class="panel">
+        <div class="section-title">Sensitivity</div>
+        <div class="field-row">
+          <label for="steering-sensitivity">Steering response</label>
+          <input id="steering-sensitivity" type="range" min="0.1" max="2.0" step="0.05" value="1.0" oninput="updateSliderLabel('steering')" onchange="saveSettings()" />
+          <div class="slider-meta"><span>Soft</span><span id="steering-sensitivity-value">1.00x</span><span>Aggressive</span></div>
+        </div>
+        <div class="field-row">
+          <label for="throttle-sensitivity">Throttle response</label>
+          <input id="throttle-sensitivity" type="range" min="0.1" max="2.0" step="0.05" value="1.0" oninput="updateSliderLabel('throttle')" onchange="saveSettings()" />
+          <div class="slider-meta"><span>Soft</span><span id="throttle-sensitivity-value">1.00x</span><span>Aggressive</span></div>
+        </div>
+      </section>
+      <section class="panel">
+        <div class="section-title">Telemetry</div>
+        <div class="telem-grid">
+          <div class="telem-card"><div class="telem-label">Speed</div><div class="telem-value speed" id="t-speed">0.000</div></div>
+          <div class="telem-card"><div class="telem-label">Steer</div><div class="telem-value steer" id="t-steer">1500</div></div>
+          <div class="telem-card"><div class="telem-label">Throttle</div><div class="telem-value throttle" id="t-throttle">1500</div></div>
+          <div class="telem-card"><div class="telem-label">Timestamp</div><div class="telem-value" id="t-time" style="font-size:0.9rem;">0</div></div>
+        </div>
+        <div class="hint" style="margin-top:10px;">
+          Parse errors: <span id="t-parse-errors">0</span><br>
+          Serial errors: <span id="t-serial-errors">0</span><br>
+          Port: <span id="t-port">None</span>
+        </div>
+      </section>
+      <section class="panel">
+        <div class="section-title">Logs</div>
+        <table class="log-table">
+          <thead><tr><th>File</th><th>Size</th></tr></thead>
+          <tbody id="log-tbody"><tr><td colspan="2" class="hint">No controller logs yet</td></tr></tbody>
+        </table>
+      </section>
+    </aside>
+    <main class="workspace">
+      <div class="joystick-shell">
+        <div class="axis-labels">
+          <span class="axis-label top">Forward</span>
+          <span class="axis-label bottom">Reverse</span>
+          <span class="axis-label left">Left</span>
+          <span class="axis-label right">Right</span>
+        </div>
+        <div id="joystick-zone"></div>
+        <div class="joystick-caption">X axis controls steering PWM<br>Y axis controls throttle PWM<br>Neutral remains 1500 us on both axes</div>
+      </div>
+      <div style="position:absolute; top:24px; right:24px; display:flex; gap:10px;">
+        <button class="btn-secondary" onclick="sendNeutral()">Send Neutral</button>
+        <button class="btn-secondary" onclick="refreshTelemetry()">Refresh Telemetry</button>
+      </div>
+    </main>
+  </div>
+  <script>
+    let isConnected = false;
+    let currentMode = 'manual';
+    let lastCmdTime = 0;
+    const CMD_INTERVAL_MS = 100;
+    function lerp(t, lo, hi) { return Math.round(lo + t * (hi - lo)); }
+    function clamp(value, lo, hi) { return Math.max(lo, Math.min(hi, value)); }
+    function scaledAxisToPwm(value, sensitivity) {
+      const scaled = clamp(value * sensitivity, -1, 1);
+      return lerp((scaled + 1) / 2, 1000, 2000);
+    }
+    function steeringSensitivity() { return parseFloat(document.getElementById('steering-sensitivity').value || '1'); }
+    function throttleSensitivity() { return parseFloat(document.getElementById('throttle-sensitivity').value || '1'); }
+    function updateSliderLabel(axis) {
+      const value = axis === 'steering' ? steeringSensitivity() : throttleSensitivity();
+      document.getElementById(`${axis}-sensitivity-value`).textContent = `${value.toFixed(2)}x`;
+    }
+    async function api(path, options) {
+      const response = await fetch(path, options);
+      const text = await response.text();
+      let payload = {};
+      if (text) {
+        try { payload = JSON.parse(text); } catch { payload = { raw: text }; }
+      }
+      if (!response.ok) throw new Error(payload.error || `Request failed: ${response.status}`);
+      return payload;
+    }
+    function setConnected(connected) {
+      isConnected = connected;
+      document.getElementById('status-dot').classList.toggle('connected', connected);
+      document.getElementById('status-text').textContent = connected ? 'Connected' : 'Disconnected';
+      document.getElementById('connect-btn').disabled = connected;
+      document.getElementById('disconnect-btn').disabled = !connected;
+    }
+    function setModeUi(mode) {
+      currentMode = mode;
+      document.getElementById('mode-manual').classList.toggle('active', mode === 'manual');
+      document.getElementById('mode-auto').classList.toggle('active', mode === 'auto');
+    }
+    async function refreshPorts() {
+      try {
+        const ports = await api('/api/ports');
+        const select = document.getElementById('port-select');
+        const previous = select.value;
+        select.innerHTML = '<option value="">Select port</option>';
+        ports.forEach(port => {
+          const option = document.createElement('option');
+          option.value = port.device;
+          option.textContent = `${port.device} - ${port.description}`;
+          if (port.device === previous) option.selected = true;
+          select.appendChild(option);
+        });
+      } catch (error) { console.warn(error); }
+    }
+    async function connectPort() {
+      const port = document.getElementById('port-select').value;
+      const baud = parseInt(document.getElementById('baud-input').value || '115200', 10);
+      if (!port) { alert('Select a serial port first.'); return; }
+      try {
+        await api('/api/connect', { method: 'POST', headers: {'Content-Type': 'application/json'}, body: JSON.stringify({ port, baud }) });
+        await refreshTelemetry();
+        await refreshLogs();
+      } catch (error) { alert(error.message); }
+    }
+    async function disconnectPort() {
+      try {
+        await api('/api/disconnect', { method: 'POST' });
+        await refreshTelemetry();
+      } catch (error) { alert(error.message); }
+    }
+    async function sendCommand(command) {
+      if (!isConnected) return;
+      await api('/api/command', { method: 'POST', headers: {'Content-Type': 'application/json'}, body: JSON.stringify({ command }) });
+    }
+    async function sendNeutral() {
+      try {
+        await sendCommand('pwm-a 1500');
+        await sendCommand('pwm-b 1500');
+      } catch (error) { alert(error.message); }
+    }
+    async function setMode(mode) {
+      try {
+        await api('/api/mode', { method: 'POST', headers: {'Content-Type': 'application/json'}, body: JSON.stringify({ mode }) });
+        setModeUi(mode);
+        await refreshTelemetry();
+      } catch (error) { alert(error.message); }
+    }
+    async function saveSettings() {
+      try {
+        await api('/api/settings', {
+          method: 'POST',
+          headers: {'Content-Type': 'application/json'},
+          body: JSON.stringify({ steering_sensitivity: steeringSensitivity(), throttle_sensitivity: throttleSensitivity() })
+        });
+      } catch (error) { alert(error.message); }
+    }
+    async function refreshTelemetry() {
+      try {
+        const telemetry = await api('/api/telemetry');
+        setConnected(telemetry.connected);
+        setModeUi(telemetry.mode || 'manual');
+        document.getElementById('t-speed').textContent = Number(telemetry.speed_mps || 0).toFixed(3);
+        document.getElementById('t-steer').textContent = telemetry.steer_us;
+        document.getElementById('t-throttle').textContent = telemetry.throttle_us;
+        document.getElementById('t-time').textContent = telemetry.timestamp_us;
+        document.getElementById('t-parse-errors').textContent = telemetry.parse_errors;
+        document.getElementById('t-serial-errors').textContent = telemetry.serial_errors;
+        document.getElementById('t-port').textContent = telemetry.selected_port || 'None';
+        document.getElementById('steering-sensitivity').value = telemetry.steering_sensitivity || 1.0;
+        document.getElementById('throttle-sensitivity').value = telemetry.throttle_sensitivity || 1.0;
+        updateSliderLabel('steering');
+        updateSliderLabel('throttle');
+      } catch (error) { console.warn(error); }
+    }
+    async function refreshLogs() {
+      try {
+        const files = await api('/api/logs');
+        const tbody = document.getElementById('log-tbody');
+        if (!files.length) {
+          tbody.innerHTML = '<tr><td colspan="2" class="hint">No controller logs yet</td></tr>';
+          return;
+        }
+        tbody.innerHTML = files.map(file => {
+          const kb = (file.size / 1024).toFixed(1);
+          return `<tr><td><a href="/api/logs/${encodeURIComponent(file.name)}">${file.name}</a></td><td>${kb} KB</td></tr>`;
+        }).join('');
+      } catch (error) { console.warn(error); }
+    }
+    const joystick = nipplejs.create({ zone: document.getElementById('joystick-zone'), mode: 'static', position: { left: '50%', top: '50%' }, color: '#38bdf8', size: 140, restOpacity: 0.7 });
+    joystick.on('move', async (_event, data) => {
+      if (!isConnected || currentMode !== 'manual') return;
+      const now = Date.now();
+      if (now - lastCmdTime < CMD_INTERVAL_MS) return;
+      lastCmdTime = now;
+      const force = Math.min(data.force, 1.0);
+      const angle = data.angle.radian;
+      const x = Math.cos(angle) * force;
+      const y = Math.sin(angle) * force;
+      const steerUs = scaledAxisToPwm(x, steeringSensitivity());
+      const throttleUs = scaledAxisToPwm(y, throttleSensitivity());
+      try {
+        await sendCommand(`pwm-a ${steerUs}`);
+        await sendCommand(`pwm-b ${throttleUs}`);
+      } catch (error) { console.warn(error); }
+    });
+    joystick.on('end', () => { if (currentMode === 'manual') sendNeutral().catch(error => console.warn(error)); });
+    refreshPorts();
+    refreshTelemetry();
+    refreshLogs();
+    setInterval(refreshTelemetry, 250);
+    setInterval(refreshLogs, 5000);
+  </script>
+</body>
+</html>

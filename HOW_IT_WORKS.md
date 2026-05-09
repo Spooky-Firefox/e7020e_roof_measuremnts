@@ -1,0 +1,216 @@
+# HOW IT WORKS
+
+## Overview
+
+This program estimates how far the camera is rotated relative to an office-roof grid and now also hosts the RP2350 controller bridge used during roof-alignment bring-up. It is designed as a headless-first sensor service for the Rock Pi 4, with optional debug display during tuning. The output is a signed angle relative to the roof's vertical grid lines, plus confidence and spread metrics, and the same process also exposes controller telemetry, logs, and a browser UI.
+
+The camera pipeline is split across bounded channels so capture, enhancement, line detection, classification, alignment estimation, and metrics can overlap without building unbounded queues. The controller service runs in a separate thread beside that pipeline and feeds Prometheus through the same metrics path.
+
+## Pipeline
+
+```mermaid
+flowchart TB
+    cap["capture.rs\nVideoCapture"]
+    enh["enhance.rs\nLab + RGB edge extraction"]
+    det["detect.rs\nHoughLinesP"]
+    cls["classify.rs\nvertical / horizontal / outlier"]
+    dec["decide.rs\nalignment report + serial"]
+    dsp["display.rs\noptional debug overlay"]
+    ctl["controller_service.rs\nUI + API + serial bridge :9091"]
+    met["metrics.rs\nPrometheus :9090"]
+
+    cap --> enh --> det --> cls --> dec --> dsp
+    cap ---> met
+    enh ---> met
+    det ---> met
+    cls ---> met
+    dec ---> met
+    ctl ---> met
+```
+
+Main channels are `bounded(2)`, which means slow downstream work naturally backpressures the pipeline instead of allowing stale frames to pile up.
+
+## Runtime Surfaces
+
+The process exposes three different operational surfaces:
+
+1. Roof-alignment metrics on `:9090/metrics`.
+2. Controller browser UI and JSON API on `:9091`.
+3. Optional downstream serial output from the alignment stage when `ROOF_SERIAL_PORT` is set.
+
+The `monitor/` stack is configured so Prometheus listens on host port `9092`, scrapes the app on `host.docker.internal:9090`, and Grafana stays on `:3000`.
+
+## Why The Old BW Path Failed
+
+If the roof scene has light gray lines on nearly white tiles, a straight BGR-to-grayscale conversion can wash out weak differences. That loses two useful cues:
+
+1. Small luminance differences can get flattened when the three color channels are averaged into one plane.
+2. Slight color shifts between line paint, lighting, and tile material can still produce edges in one channel even when the grayscale image looks almost flat.
+
+The enhancement stage now keeps more information by using multiple edge sources instead of trusting one grayscale image.
+
+## Stage 1: Capture
+
+`src/capture.rs` opens the USB camera, reads frames continuously, and forwards each frame downstream. The camera index defaults to `DEFAULT_CAMERA_INDEX` and can be overridden with `ROOF_CAMERA_INDEX`.
+
+## Stage 2: Enhancement
+
+`src/enhance.rs` builds a line-friendly edge map in one fast pass:
+
+1. Crop the frame to the clean central region so edge clutter near the lens borders is removed early.
+2. Optionally downscale that cropped region before the expensive filters run.
+3. Convert the cropped frame to Lab and extract the `L` channel.
+4. Run blur + Canny on that enhanced luminance view.
+5. Apply a small dilation so broken seams connect before Hough.
+
+This is intentionally cheaper than the earlier multi-channel path. Detection now runs a single Hough pass over that prebuilt edge map at a more aggressive downscale, with stricter thresholds to reduce noisy line fragments while still forwarding all candidates that survive Hough.
+
+## Stage 3: Detection
+
+`src/detect.rs` runs a single `HoughLinesP` pass over the prepared edge image. The detector works on the downscaled image, so the effective threshold, minimum line length, and gap settings are scaled with the processing resolution instead of using the raw camera-space numbers directly.
+
+Each candidate line is converted into a `RawLine` with:
+
+- start point
+- end point
+- wrapped angle in `[0, 180)`
+- pixel length
+
+That keeps the next stage focused on geometry instead of OpenCV-specific line storage.
+
+## Stage 4: Classification
+
+`src/classify.rs` compares each detected line against the expected roof axes:
+
+- horizontal target: `0°`
+- margin: `±30°`
+
+Each line becomes one of:
+
+- `Vertical`
+- `Horizontal`
+- `Outlier`
+
+For the vertical and horizontal groups, the stage computes:
+
+- count
+- weighted mean angle error
+- min/max angle error
+- spread
+- standard deviation
+
+Those numbers are used both for telemetry and for deciding whether the frame contains a reliable grid estimate.
+
+## Stage 5: Alignment Estimate
+
+`src/decide.rs` builds one `AlignmentReport` per frame.
+
+The primary estimate is the vertical-line cluster, because the corridor-following use case defines zero degrees relative to the roof's vertical grid lines. Horizontal lines are still measured and logged as a cross-check.
+
+The report includes:
+
+- chosen signed angle from vertical
+- dominant axis used for the estimate
+- confidence
+- total, vertical, horizontal, and outlier counts
+- min/max/spread/stddev for vertical and horizontal clusters
+
+If confidence is high enough, the stage also emits a serial-ready CSV frame.
+
+## Serial Output
+
+`src/serial.rs` is currently a non-blocking boilerplate path. If `ROOF_SERIAL_PORT` is set, the app attempts to open that port and send a CSV line shaped like this:
+
+```text
+ALIGN,<angle_deg>,<confidence>,<total>,<vertical>,<horizontal>,<v_min>,<v_max>,<v_stddev>,<h_stddev>,<h_cross_check>
+```
+
+This is intentionally simple for bring-up with a Pico2. The internal data model is already structured so a binary protocol can replace the CSV encoder later without changing the upstream pipeline.
+
+## Controller Service
+
+`src/controller_service.rs` hosts a second thread that reuses the old simple-server workflow inside the Rust process instead of relying on the separate Python app.
+
+Its responsibilities are:
+
+1. Serve the embedded controller UI from `src/controller_ui.html` on `:9091`.
+2. Expose JSON endpoints for connect, disconnect, mode changes, command send, telemetry readout, and log download.
+3. Open the RP2350 serial port, clone the handle for a reader thread, and keep a shared host-side snapshot of the latest values.
+4. Accept both the older simple 4-column stream and the RP2350 `simple_csv` 14-column event stream.
+5. Ignore echoed commands, `OK`, `ERR`, and comment lines so command traffic does not inflate parse errors.
+6. Append controller, hall, and ultrasound events to CSV logs in `controller_logs/`.
+
+The UI adds:
+
+- serial connect and disconnect controls
+- a joystick for steering and throttle PWM
+- steering and throttle sensitivity sliders
+- manual and auto mode buttons
+- live telemetry polling
+- controller log download links
+
+Manual PWM commands are blocked while auto mode is active, except for neutral recentering and explicit mode changes.
+
+## Controller Telemetry Flow
+
+The RP2350 sends event-tagged serial lines. The host currently understands three families:
+
+1. `controller` rows carrying steer PWM, throttle PWM, setpoint, error, and Kalman state.
+2. `hall_delta_t` rows carrying hall timing data.
+3. `ultrasound` rows carrying distance sensor values.
+
+The controller thread keeps the latest value for each field in memory, writes the raw event into a host CSV log, and forwards the reduced snapshot into the shared Prometheus exporter. That means Grafana can show controller state and distance sensors without running a second exporter.
+
+## Metrics And Grafana
+
+`src/metrics.rs` exposes Prometheus metrics on `:9090/metrics`. The dashboard under `monitor/` tracks both roof-alignment and controller data:
+
+- chosen angle
+- confidence
+- total, vertical, horizontal, and outlier line counts
+- min and max detected angles
+- vertical and horizontal deviation
+- requested and driver-applied camera settings
+- live capture FPS and frame period
+- per-stage p01 and p99 wall time
+- per-stage p01 and p99 CPU time
+- per-stage p01 and p99 wait time (`wall - cpu`) so capture stalls stand out separately from CPU bottlenecks
+- per-stage throughput
+- controller link and manual/auto mode
+- steering PWM, throttle PWM, speed, setpoint, and error
+- steering and throttle sensitivity
+- parser and serial error counters
+- distance sensor values
+- hall delta-t
+- Kalman state values
+
+The bundled `monitor/docker-compose.yml` starts:
+
+- Prometheus on host `:9092`
+- Grafana on host `:3000`
+
+Grafana is provisioned against the internal container URL `http://prometheus:9090`, while Prometheus scrapes the Rust app on host `:9090`.
+
+## Debug Display
+
+The default build is headless. For local tuning, build without the default `no-display` feature:
+
+```bash
+cargo run --no-default-features
+```
+
+The display shows the raw frame, enhanced luminance view, combined edge image, and annotated line overlay.
+
+## Tuning Notes
+
+If the roof grid is still weak in difficult lighting, the first things to tune are in `src/consts.rs`:
+
+- `PROCESSING_DOWNSCALE`
+- `CLAHE_CLIP_LIMIT`
+- `CANNY_LOW_THRESHOLD`
+- `CANNY_HIGH_THRESHOLD`
+- `PRIMARY_HOUGH_THRESHOLD`
+- `PRIMARY_HOUGH_MIN_LINE_LENGTH`
+- `PRIMARY_HOUGH_MAX_LINE_GAP`
+
+If the detector is too noisy, first raise the Hough threshold or minimum line length before touching the enhancement stage. If faint seams are still missing after that, lower the Hough settings only after checking that the enhancement stage is actually exposing the lines.

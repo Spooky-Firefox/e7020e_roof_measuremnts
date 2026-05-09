@@ -1,0 +1,11 @@
+global:
+  scrape_interval: 500ms
+  evaluation_interval: 500ms
+
+scrape_configs:
+  - job_name: roof_alignment
+    static_configs:
+      - targets:
+          - host.docker.internal:9090
+        labels:
+          instance: rockpi4
