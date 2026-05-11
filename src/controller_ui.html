@@ -105,8 +105,8 @@
       font-size: 0.85rem;
       color: var(--muted);
     }
-    select, input[type="number"], input[type="range"] { width: 100%; }
-    select, input[type="number"] {
+    select, input[type="number"], input[type="text"], input[type="file"], input[type="range"] { width: 100%; }
+    select, input[type="number"], input[type="text"], input[type="file"] {
       border-radius: 10px;
       border: 1px solid var(--line);
       background: var(--panel-2);
@@ -304,6 +304,46 @@
         </div>
       </section>
       <section class="panel">
+        <div class="section-title">Constants</div>
+        <div class="field-row">
+          <label for="const-name-select">Preset name</label>
+          <select id="const-name-select" onchange="syncConstNameFromSelect()">
+            <option value="">Custom (type below)</option>
+            <option value="pid_steer_kp">pid_steer_kp</option>
+            <option value="pid_steer_ki">pid_steer_ki</option>
+            <option value="pid_steer_kd">pid_steer_kd</option>
+            <option value="pid_speed_kp">pid_speed_kp</option>
+            <option value="pid_speed_ki">pid_speed_ki</option>
+            <option value="pid_speed_kd">pid_speed_kd</option>
+            <option value="ekf_q_angle">ekf_q_angle</option>
+            <option value="ekf_q_bias">ekf_q_bias</option>
+            <option value="ekf_r_measure">ekf_r_measure</option>
+            <option value="ctrl_deadband">ctrl_deadband</option>
+          </select>
+        </div>
+        <div class="field-row">
+          <label for="const-name">Name</label>
+          <input id="const-name" type="text" placeholder="ekf_q_angle" />
+        </div>
+        <div class="field-row">
+          <label for="const-value">Value</label>
+          <input id="const-value" type="text" placeholder="0.003" />
+        </div>
+        <div class="btn-row" style="margin-bottom:10px;">
+          <button class="btn-secondary" onclick="sendConstValue()">Send Const</button>
+        </div>
+        <div class="field-row">
+          <label for="const-file">Load consts from file</label>
+          <input id="const-file" type="file" accept=".txt,.cfg,.conf,.csv" />
+        </div>
+        <div class="btn-row">
+          <button class="btn-secondary" onclick="sendConstFile()">Send Const File</button>
+        </div>
+        <div class="hint" style="margin-top:10px;">
+          File format: one entry per line as <strong>const name value</strong> or <strong>name value</strong>. Lines starting with # are ignored.
+        </div>
+      </section>
+      <section class="panel">
         <div class="section-title">Telemetry</div>
         <div class="telem-grid">
           <div class="telem-card"><div class="telem-label">Speed</div><div class="telem-value speed" id="t-speed">0.000</div></div>
@@ -415,6 +455,68 @@
     async function sendCommand(command) {
       if (!isConnected) return;
       await api('/api/command', { method: 'POST', headers: {'Content-Type': 'application/json'}, body: JSON.stringify({ command }) });
+    }
+    function normalizeConstLine(line) {
+      const trimmed = line.trim();
+      if (!trimmed || trimmed.startsWith('#')) return null;
+      if (trimmed.startsWith('const ')) return trimmed;
+      return `const ${trimmed}`;
+    }
+    function validateConstCommand(command) {
+      const parts = command.trim().split(/\s+/);
+      return parts.length >= 3 && parts[0] === 'const';
+    }
+    function syncConstNameFromSelect() {
+      const selected = document.getElementById('const-name-select').value;
+      if (!selected) return;
+      document.getElementById('const-name').value = selected;
+    }
+    async function sendConstValue() {
+      const selected = (document.getElementById('const-name-select').value || '').trim();
+      const typed = (document.getElementById('const-name').value || '').trim();
+      const name = typed || selected;
+      const value = (document.getElementById('const-value').value || '').trim();
+      if (!name || !value) {
+        alert('Provide both const name and value.');
+        return;
+      }
+      try {
+        await sendCommand(`const ${name} ${value}`);
+      } catch (error) { alert(error.message); }
+    }
+    async function sendConstFile() {
+      const input = document.getElementById('const-file');
+      const file = input.files && input.files[0] ? input.files[0] : null;
+      if (!file) {
+        alert('Select a constants file first.');
+        return;
+      }
+
+      const text = await file.text();
+      const commands = text
+        .split(/\r?\n/)
+        .map(normalizeConstLine)
+        .filter(command => command !== null);
+
+      if (!commands.length) {
+        alert('No const commands found in file.');
+        return;
+      }
+
+      for (const command of commands) {
+        if (!validateConstCommand(command)) {
+          alert(`Invalid const line: ${command}`);
+          return;
+        }
+      }
+
+      try {
+        await api('/api/command', {
+          method: 'POST',
+          headers: {'Content-Type': 'application/json'},
+          body: JSON.stringify({ commands })
+        });
+      } catch (error) { alert(error.message); }
     }
     async function sendNeutral() {
       try {

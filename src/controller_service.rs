@@ -2,8 +2,8 @@ use std::fs::{self, File};
 use std::io::{BufRead, BufReader, BufWriter, Write};
 use std::path::{Path, PathBuf};
 use std::sync::{
-    atomic::{AtomicBool, Ordering},
     Arc, Mutex,
+    atomic::{AtomicBool, Ordering},
 };
 use std::thread;
 use std::time::{Duration, SystemTime, UNIX_EPOCH};
@@ -13,11 +13,12 @@ use crossbeam_channel::Sender;
 use log::{error, info, warn};
 use serde::Deserialize;
 use serde_json::json;
-use serialport::{available_ports, SerialPort};
+use serialport::{SerialPort, available_ports};
 use tiny_http::{Header, Method, Request, Response, StatusCode};
 
 use crate::{
     consts,
+    shared_serial::SharedSerialPort,
     types::{ControllerMetrics, ControllerMode, ControllerTelemetrySnapshot, MetricsMsg},
 };
 
@@ -26,19 +27,19 @@ const INDEX_HTML: &str = include_str!("controller_ui.html");
 type SharedState = Arc<Mutex<ControllerState>>;
 
 struct ControllerState {
-    serial_writer: Option<Box<dyn SerialPort>>,
     log_writer: Option<BufWriter<File>>,
     stop_flag: Option<Arc<AtomicBool>>,
     snapshot: ControllerTelemetrySnapshot,
+    shared_port: SharedSerialPort,
 }
 
-impl Default for ControllerState {
-    fn default() -> Self {
+impl ControllerState {
+    fn new(shared_port: SharedSerialPort) -> Self {
         Self {
-            serial_writer: None,
             log_writer: None,
             stop_flag: None,
             snapshot: ControllerTelemetrySnapshot::default(),
+            shared_port,
         }
     }
 }
@@ -51,7 +52,8 @@ struct ConnectRequest {
 
 #[derive(Deserialize)]
 struct CommandRequest {
-    command: String,
+    command: Option<String>,
+    commands: Option<Vec<String>>,
 }
 
 #[derive(Deserialize)]
@@ -98,10 +100,13 @@ enum TelemetryParseResult {
     Invalid,
 }
 
-pub fn run_controller_service(tx_metrics: Sender<MetricsMsg>) -> Result<()> {
+pub fn run_controller_service(
+    tx_metrics: Sender<MetricsMsg>,
+    shared_port: SharedSerialPort,
+) -> Result<()> {
     fs::create_dir_all(controller_log_dir())?;
 
-    let state = Arc::new(Mutex::new(ControllerState::default()));
+    let state = Arc::new(Mutex::new(ControllerState::new(shared_port)));
     publish_metrics(&tx_metrics, &ControllerTelemetrySnapshot::default());
 
     let server = tiny_http::Server::http(consts::CONTROLLER_HTTP_BIND)
@@ -120,13 +125,12 @@ pub fn run_controller_service(tx_metrics: Sender<MetricsMsg>) -> Result<()> {
     Ok(())
 }
 
-fn handle_request(request: Request, state: &SharedState, tx_metrics: &Sender<MetricsMsg>) -> Result<()> {
-    let path = request
-        .url()
-        .split('?')
-        .next()
-        .unwrap_or("/")
-        .to_string();
+fn handle_request(
+    request: Request,
+    state: &SharedState,
+    tx_metrics: &Sender<MetricsMsg>,
+) -> Result<()> {
+    let path = request.url().split('?').next().unwrap_or("/").to_string();
 
     match (request.method(), path.as_str()) {
         (&Method::Get, "/") => respond_html(request, INDEX_HTML),
@@ -206,7 +210,7 @@ fn handle_connect(
 
     {
         let state = lock_state(state)?;
-        if state.serial_writer.is_some() {
+        if state.snapshot.connected {
             return respond_json(
                 request,
                 StatusCode(400),
@@ -240,9 +244,10 @@ fn handle_connect(
         state.snapshot.parse_errors = 0;
         state.snapshot.serial_errors = 0;
         state.snapshot.selected_port = Some(connect.port.clone());
-        state.serial_writer = Some(writer);
         state.log_writer = Some(log_writer);
         state.stop_flag = Some(stop_flag.clone());
+        // Set the port in the shared handle for alignment and command writing
+        state.shared_port.set_port(writer);
         state.snapshot.clone()
     };
 
@@ -277,8 +282,8 @@ fn handle_command(
     tx_metrics: &Sender<MetricsMsg>,
 ) -> Result<()> {
     let payload: CommandRequest = read_json_body(&mut request)?;
-    let command = payload.command.trim();
-    if command.is_empty() {
+    let commands = parse_command_request(&payload)?;
+    if commands.is_empty() {
         return respond_json(
             request,
             StatusCode(400),
@@ -286,10 +291,14 @@ fn handle_command(
         );
     }
 
-    match send_serial_command(state, command) {
+    match send_serial_commands(state, &commands) {
         Ok(snapshot) => {
             publish_metrics(tx_metrics, &snapshot);
-            respond_json(request, StatusCode(200), &json!({"ok": true}).to_string())
+            respond_json(
+                request,
+                StatusCode(200),
+                &json!({"ok": true, "sent": commands.len()}).to_string(),
+            )
         }
         Err(error) => respond_json(
             request,
@@ -297,6 +306,66 @@ fn handle_command(
             &json!({"error": error.to_string()}).to_string(),
         ),
     }
+}
+
+fn parse_command_request(payload: &CommandRequest) -> Result<Vec<String>> {
+    let mut commands = Vec::new();
+
+    if let Some(command) = payload.command.as_deref() {
+        let command = command.trim();
+        if !command.is_empty() {
+            commands.push(command.to_string());
+        }
+    }
+
+    if let Some(list) = payload.commands.as_ref() {
+        for command in list {
+            let command = command.trim();
+            if !command.is_empty() {
+                commands.push(command.to_string());
+            }
+        }
+    }
+
+    for command in &commands {
+        validate_command(command)?;
+    }
+
+    Ok(commands)
+}
+
+fn validate_command(command: &str) -> Result<()> {
+    if command.starts_with("const ") {
+        let mut parts = command.split_whitespace();
+        let _ = parts.next();
+        let Some(name) = parts.next() else {
+            anyhow::bail!("const command must be: const <name> <value>");
+        };
+        let Some(_value) = parts.next() else {
+            anyhow::bail!("const command must be: const <name> <value>");
+        };
+
+        if name.is_empty() {
+            anyhow::bail!("const name cannot be empty");
+        }
+    }
+
+    Ok(())
+}
+
+fn send_serial_commands(
+    state: &SharedState,
+    commands: &[String],
+) -> Result<ControllerTelemetrySnapshot> {
+    let mut last_snapshot = None;
+    for command in commands {
+        last_snapshot = Some(
+            send_serial_command(state, command)
+                .with_context(|| format!("failed to send command: {command}"))?,
+        );
+    }
+
+    last_snapshot.context("no commands to send")
 }
 
 fn handle_settings(
@@ -378,7 +447,7 @@ fn handle_download_log(request: Request, path: &str) -> Result<()> {
 
 fn send_serial_command(state: &SharedState, command: &str) -> Result<ControllerTelemetrySnapshot> {
     let mut state = lock_state(state)?;
-    if state.serial_writer.is_none() {
+    if !state.snapshot.connected {
         anyhow::bail!("not connected");
     }
 
@@ -386,10 +455,8 @@ fn send_serial_command(state: &SharedState, command: &str) -> Result<ControllerT
         anyhow::bail!("manual PWM commands are disabled while auto mode is active");
     }
 
-    let writer = state.serial_writer.as_mut().context("not connected")?;
-    writer.write_all(command.as_bytes())?;
-    writer.write_all(b"\n")?;
-    writer.flush()?;
+    let payload = format!("{}\n", command);
+    state.shared_port.write_str(&payload);
 
     apply_command_snapshot(&mut state.snapshot, command);
     Ok(state.snapshot.clone())
@@ -457,7 +524,9 @@ fn spawn_reader(
 
                     if consecutive_errors >= 10 {
                         if let Err(disconnect_error) = disconnect_locked(&state) {
-                            error!("[controller] failed to close broken serial link: {disconnect_error:#}");
+                            error!(
+                                "[controller] failed to close broken serial link: {disconnect_error:#}"
+                            );
                         }
                         if let Ok(state) = lock_state(&state) {
                             publish_metrics(&tx_metrics, &state.snapshot);
@@ -715,32 +784,30 @@ fn parse_telemetry_line(line: &str) -> TelemetryParseResult {
                         kalman1,
                         kalman2,
                         kalman3,
-                    ) => {
-                        TelemetryParseResult::Parsed {
-                            snapshot: Some(ParsedTelemetry {
-                                timestamp_us,
-                                steer_us,
-                                throttle_us,
-                                speed_mps,
-                            }),
-                            log_row: ControllerLogRow {
-                                timestamp_us,
-                                event: "controller",
-                                steer_us: Some(steer_us),
-                                throttle_us: Some(throttle_us),
-                                setpoint_mps: Some(speed_mps),
-                                error_value,
-                                delta_t_us: None,
-                                kalman0,
-                                kalman1,
-                                kalman2,
-                                kalman3,
-                                distance0_cm: parse_csv_u32(parts[11]),
-                                distance1_cm: parse_csv_u32(parts[12]),
-                                distance2_cm: parse_csv_u32(parts[13]),
-                            },
-                        }
-                    }
+                    ) => TelemetryParseResult::Parsed {
+                        snapshot: Some(ParsedTelemetry {
+                            timestamp_us,
+                            steer_us,
+                            throttle_us,
+                            speed_mps,
+                        }),
+                        log_row: ControllerLogRow {
+                            timestamp_us,
+                            event: "controller",
+                            steer_us: Some(steer_us),
+                            throttle_us: Some(throttle_us),
+                            setpoint_mps: Some(speed_mps),
+                            error_value,
+                            delta_t_us: None,
+                            kalman0,
+                            kalman1,
+                            kalman2,
+                            kalman3,
+                            distance0_cm: parse_csv_u32(parts[11]),
+                            distance1_cm: parse_csv_u32(parts[12]),
+                            distance2_cm: parse_csv_u32(parts[13]),
+                        },
+                    },
                     _ => TelemetryParseResult::Invalid,
                 }
             }
@@ -789,7 +856,10 @@ fn parse_telemetry_line(line: &str) -> TelemetryParseResult {
     TelemetryParseResult::Invalid
 }
 
-fn apply_log_row_to_snapshot(snapshot: &mut ControllerTelemetrySnapshot, log_row: &ControllerLogRow) {
+fn apply_log_row_to_snapshot(
+    snapshot: &mut ControllerTelemetrySnapshot,
+    log_row: &ControllerLogRow,
+) {
     snapshot.timestamp_us = log_row.timestamp_us;
     snapshot.last_update_us = log_row.timestamp_us;
 
@@ -837,6 +907,7 @@ fn is_command_echo(line: &str) -> bool {
     line.starts_with("pwm-a ")
         || line.starts_with("pwm-b ")
         || line.starts_with("speed ")
+        || line.starts_with("const ")
         || line.starts_with("mode ")
 }
 
@@ -880,11 +951,15 @@ fn write_log_row(log_writer: &mut BufWriter<File>, row: &ControllerLogRow) -> st
 }
 
 fn format_csv_opt_i32(value: Option<i32>) -> String {
-    value.map(|value| value.to_string()).unwrap_or_else(|| "null".to_string())
+    value
+        .map(|value| value.to_string())
+        .unwrap_or_else(|| "null".to_string())
 }
 
 fn format_csv_opt_u32(value: Option<u32>) -> String {
-    value.map(|value| value.to_string()).unwrap_or_else(|| "null".to_string())
+    value
+        .map(|value| value.to_string())
+        .unwrap_or_else(|| "null".to_string())
 }
 
 fn format_csv_opt_f32(value: Option<f32>) -> String {
@@ -899,7 +974,7 @@ fn disconnect_locked(state: &SharedState) -> Result<()> {
         stop_flag.store(true, Ordering::Relaxed);
     }
 
-    state.serial_writer.take();
+    state.shared_port.clear_port();
     if let Some(mut log_writer) = state.log_writer.take() {
         log_writer.flush().ok();
     }
@@ -934,7 +1009,9 @@ fn new_log_path() -> PathBuf {
 }
 
 fn lock_state(state: &SharedState) -> Result<std::sync::MutexGuard<'_, ControllerState>> {
-    state.lock().map_err(|_| anyhow::anyhow!("controller state lock poisoned"))
+    state
+        .lock()
+        .map_err(|_| anyhow::anyhow!("controller state lock poisoned"))
 }
 
 fn describe_port(port: &serialport::SerialPortInfo) -> String {

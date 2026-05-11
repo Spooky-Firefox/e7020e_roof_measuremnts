@@ -17,5 +17,6 @@ serialport = "4.8.1"
 tiny_http = "0.12"
 
 [features]
-default = ["no-display"]
+default = ["camera-support", "no-display"]
+camera-support = []
 no-display = []

@@ -1,36 +1,28 @@
 use anyhow::Result;
-use crossbeam_channel::{Receiver, Sender};
 use cpu_time::ThreadTime;
+use crossbeam_channel::{Receiver, Sender};
 use log::{debug, info};
 use std::time::Instant;
 
 use crate::{
-    consts,
-    serial::{encode_alignment_csv, SerialOutput},
-    types::{AlignmentMsg, AxisClass, ClassifiedMsg, MetricsMsg},
+    serial::send_alignment,
+    shared_serial::SharedSerialPort,
+    types::{AlignmentMsg, ClassifiedMsg, MetricsMsg},
 };
 
 pub struct DecideStage {
-    serial: SerialOutput,
+    shared_port: SharedSerialPort,
 }
 
 impl DecideStage {
-    pub fn new() -> Self {
-        Self {
-            serial: SerialOutput::from_env(),
-        }
+    pub fn new(shared_port: SharedSerialPort) -> Self {
+        Self { shared_port }
     }
 
     pub fn process(&mut self, msg: ClassifiedMsg) -> AlignmentMsg {
-        let serial_frame = encode_alignment_csv(&msg.report);
-        if msg.report.confidence >= consts::MIN_ALIGNMENT_CONFIDENCE {
-            self.serial.send(&serial_frame);
-        }
+        send_alignment(&self.shared_port, &msg.report);
 
-        let axis = match msg.report.dominant_axis {
-            AxisClass::Outlier => "none",
-            other => other.as_str(),
-        };
+        let axis = msg.report.dominant_axis.as_str();
         info!(
             "[align] axis={} angle={:.2}deg confidence={:.3} total={} vertical={} horizontal={} outliers={} v_range=[{:.2},{:.2}] h_range=[{:.2},{:.2}] v_spread={:.2} h_spread={:.2} v_stddev={:.2} h_stddev={:.2}",
             axis,
@@ -49,7 +41,10 @@ impl DecideStage {
             msg.report.vertical.stddev_deg,
             msg.report.horizontal.stddev_deg,
         );
-        debug!("[align] serial={}", serial_frame.trim_end());
+        debug!(
+            "[align] command=align {:.2} {:.3}",
+            msg.report.angle_from_vertical_deg, msg.report.confidence,
+        );
 
         AlignmentMsg {
             frame: msg.frame,
@@ -57,7 +52,7 @@ impl DecideStage {
             edges: msg.edges,
             lines: msg.lines,
             report: msg.report,
-            serial_frame,
+            serial_frame: String::new(),
         }
     }
 }
@@ -66,8 +61,9 @@ pub fn run_decide(
     rx: Receiver<ClassifiedMsg>,
     tx: Sender<AlignmentMsg>,
     tx_metrics: Sender<MetricsMsg>,
+    shared_port: SharedSerialPort,
 ) -> Result<()> {
-    let mut stage = DecideStage::new();
+    let mut stage = DecideStage::new(shared_port);
     for msg in rx {
         let t_real = Instant::now();
         let t_cpu = ThreadTime::now();
@@ -87,8 +83,16 @@ pub fn run_decide(
                     confidence: out.report.confidence,
                     vertical_spread_deg: out.report.vertical.stddev_deg,
                     horizontal_spread_deg: out.report.horizontal.stddev_deg,
-                    min_angle_deg: out.report.vertical.min_deg.min(out.report.horizontal.min_deg),
-                    max_angle_deg: out.report.vertical.max_deg.max(out.report.horizontal.max_deg),
+                    min_angle_deg: out
+                        .report
+                        .vertical
+                        .min_deg
+                        .min(out.report.horizontal.min_deg),
+                    max_angle_deg: out
+                        .report
+                        .vertical
+                        .max_deg
+                        .max(out.report.horizontal.max_deg),
                 }),
                 camera: None,
                 controller: None,

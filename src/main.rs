@@ -8,30 +8,38 @@ mod display;
 mod enhance;
 mod metrics;
 mod serial;
+mod shared_serial;
 mod types;
 
-use anyhow::{Context, Result};
+use anyhow::Result;
 use crossbeam_channel::bounded;
-use log::{info, warn};
-use opencv::{prelude::*, videoio};
+use log::info;
 use std::thread;
+
+#[cfg(feature = "camera-support")]
+use anyhow::Context;
+
+#[cfg(feature = "camera-support")]
+use log::warn;
+
+#[cfg(feature = "camera-support")]
+use opencv::{prelude::*, videoio};
 
 #[cfg(not(feature = "no-display"))]
 use opencv::highgui;
 
-use types::{AlignmentMsg, CameraMetrics, ClassifiedMsg, DetectMsg, EnhanceMsg, MetricsMsg};
+use opencv::prelude::Mat;
+use types::{AlignmentMsg, ClassifiedMsg, DetectMsg, EnhanceMsg, MetricsMsg};
 
-fn requested_camera_index() -> i32 {
-    std::env::var("ROOF_CAMERA_INDEX")
-        .ok()
-        .and_then(|value| value.parse::<i32>().ok())
-        .unwrap_or(consts::DEFAULT_CAMERA_INDEX)
-}
+#[cfg(feature = "camera-support")]
+use types::CameraMetrics;
 
+#[cfg(feature = "camera-support")]
 fn read_camera_prop(cam: &videoio::VideoCapture, prop: i32) -> f64 {
     cam.get(prop).unwrap_or(-1.0)
 }
 
+#[cfg(feature = "camera-support")]
 fn preferred_camera_backend() -> i32 {
     #[cfg(target_os = "linux")]
     {
@@ -44,6 +52,7 @@ fn preferred_camera_backend() -> i32 {
     }
 }
 
+#[cfg(feature = "camera-support")]
 fn fourcc_from_str(code: &str) -> i32 {
     let bytes = code.as_bytes();
     if bytes.len() != 4 {
@@ -56,6 +65,7 @@ fn fourcc_from_str(code: &str) -> i32 {
         | (i32::from(bytes[3]) << 24)
 }
 
+#[cfg(feature = "camera-support")]
 fn fourcc_to_string(value: f64) -> String {
     let code = value.round() as u32;
     let bytes = [
@@ -65,13 +75,17 @@ fn fourcc_to_string(value: f64) -> String {
         ((code >> 24) & 0xFF) as u8,
     ];
 
-    if bytes.iter().all(|byte| byte.is_ascii_graphic() || *byte == b' ') {
+    if bytes
+        .iter()
+        .all(|byte| byte.is_ascii_graphic() || *byte == b' ')
+    {
         String::from_utf8_lossy(&bytes).into_owned()
     } else {
         format!("0x{code:08X}")
     }
 }
 
+#[cfg(feature = "camera-support")]
 fn camera_metrics_snapshot(cam: &videoio::VideoCapture) -> CameraMetrics {
     CameraMetrics {
         requested_width: Some(consts::DEFAULT_CAMERA_WIDTH as f64),
@@ -90,6 +104,7 @@ fn camera_metrics_snapshot(cam: &videoio::VideoCapture) -> CameraMetrics {
     }
 }
 
+#[cfg(feature = "camera-support")]
 fn log_camera_settings(label: &str, cam: &videoio::VideoCapture) {
     let backend = read_camera_prop(cam, videoio::CAP_PROP_BACKEND);
     let width = read_camera_prop(cam, videoio::CAP_PROP_FRAME_WIDTH);
@@ -102,7 +117,7 @@ fn log_camera_settings(label: &str, cam: &videoio::VideoCapture) {
 
     info!(
         "[camera:{label}] requested index={} backend={} width={} height={} fps={} fourcc={} buffersize={}",
-        requested_camera_index(),
+        consts::DEFAULT_CAMERA_INDEX,
         preferred_camera_backend(),
         consts::DEFAULT_CAMERA_WIDTH,
         consts::DEFAULT_CAMERA_HEIGHT,
@@ -124,6 +139,7 @@ fn log_camera_settings(label: &str, cam: &videoio::VideoCapture) {
     }
 }
 
+#[cfg(feature = "camera-support")]
 fn open_camera() -> Result<videoio::VideoCapture> {
     let camera_index = std::env::var("ROOF_CAMERA_INDEX")
         .ok()
@@ -148,7 +164,8 @@ fn open_camera() -> Result<videoio::VideoCapture> {
         consts::DEFAULT_CAMERA_HEIGHT as f64,
     )
     .ok();
-    cam.set(videoio::CAP_PROP_FPS, consts::DEFAULT_CAMERA_FPS).ok();
+    cam.set(videoio::CAP_PROP_FPS, consts::DEFAULT_CAMERA_FPS)
+        .ok();
     cam.set(
         videoio::CAP_PROP_BUFFERSIZE,
         consts::DEFAULT_CAMERA_BUFFER_SIZE as f64,
@@ -164,6 +181,7 @@ fn open_camera() -> Result<videoio::VideoCapture> {
     Ok(cam)
 }
 
+#[cfg(feature = "camera-support")]
 fn warmup_frame(cam: &mut videoio::VideoCapture) -> Result<opencv::core::Size> {
     let mut warmup = Mat::default();
     for _ in 0..consts::CAMERA_WARMUP_READS {
@@ -176,12 +194,27 @@ fn warmup_frame(cam: &mut videoio::VideoCapture) -> Result<opencv::core::Size> {
     anyhow::bail!("camera produced no frames during warm-up");
 }
 
+#[cfg(feature = "camera-support")]
 fn processing_frame_size(full_size: opencv::core::Size) -> opencv::core::Size {
     let width = ((full_size.width as f64) * consts::CENTER_CROP_WIDTH_FRACTION).round() as i32;
     let height = ((full_size.height as f64) * consts::CENTER_CROP_HEIGHT_FRACTION).round() as i32;
     let scaled_width = ((width as f64) * consts::PROCESSING_DOWNSCALE).round() as i32;
     let scaled_height = ((height as f64) * consts::PROCESSING_DOWNSCALE).round() as i32;
     opencv::core::Size::new(scaled_width.max(1), scaled_height.max(1))
+}
+
+#[cfg(not(feature = "camera-support"))]
+fn processing_frame_size(_full_size: ()) -> opencv::core::Size {
+    opencv::core::Size::new(
+        (consts::DEFAULT_CAMERA_WIDTH as f64
+            * consts::CENTER_CROP_WIDTH_FRACTION
+            * consts::PROCESSING_DOWNSCALE)
+            .round() as i32,
+        (consts::DEFAULT_CAMERA_HEIGHT as f64
+            * consts::CENTER_CROP_HEIGHT_FRACTION
+            * consts::PROCESSING_DOWNSCALE)
+            .round() as i32,
+    )
 }
 
 fn main() -> Result<()> {
@@ -199,9 +232,20 @@ fn main() -> Result<()> {
         consts::WINDOW_HEIGHT,
     )?;
 
-    let mut cam = open_camera()?;
-    let frame_size = processing_frame_size(warmup_frame(&mut cam)?);
-    log_camera_settings("warmup", &cam);
+    #[cfg(feature = "camera-support")]
+    let (frame_size, camera_metrics) = {
+        let mut cam = open_camera()?;
+        let frame_size = processing_frame_size(warmup_frame(&mut cam)?);
+        log_camera_settings("warmup", &cam);
+        (frame_size, Some(camera_metrics_snapshot(&cam)))
+    };
+
+    #[cfg(not(feature = "camera-support"))]
+    let (frame_size, camera_metrics) = {
+        info!("[main] Camera support disabled - using default frame size");
+        let frame_size = processing_frame_size(());
+        (frame_size, None)
+    };
 
     let (tx_cap, rx_cap) = bounded::<Mat>(2);
     let (tx_enh, rx_enh) = bounded::<EnhanceMsg>(2);
@@ -210,16 +254,18 @@ fn main() -> Result<()> {
     let (tx_align, rx_align) = bounded::<AlignmentMsg>(2);
     let (tx_metrics, rx_metrics) = bounded::<MetricsMsg>(128);
 
-    tx_metrics
-        .try_send(MetricsMsg {
-            stage: "camera",
-            real_us: 0,
-            cpu_us: 0,
-            lines: None,
-            camera: Some(camera_metrics_snapshot(&cam)),
-            controller: None,
-        })
-        .ok();
+    if let Some(cam_metrics) = camera_metrics {
+        tx_metrics
+            .try_send(MetricsMsg {
+                stage: "camera",
+                real_us: 0,
+                cpu_us: 0,
+                lines: None,
+                camera: Some(cam_metrics),
+                controller: None,
+            })
+            .ok();
+    }
 
     let tx_m1 = tx_metrics.clone();
     let tx_m2 = tx_metrics.clone();
@@ -228,13 +274,37 @@ fn main() -> Result<()> {
     let tx_m5 = tx_metrics;
     let tx_controller = tx_m5.clone();
 
-    let t1 = thread::spawn(move || capture::run_capture(cam, tx_cap, tx_m1));
+    // Create shared serial port for both controller and alignment services
+    let shared_port = shared_serial::SharedSerialPort::new();
+
+    let shared_port_align = shared_port.clone();
+    let shared_port_controller = shared_port.clone();
+
+    #[cfg(feature = "camera-support")]
+    let t1 = {
+        let tx_cap = tx_cap;
+        let tx_m1 = tx_m1;
+        thread::spawn(move || {
+            let cam = open_camera().expect("failed to open camera");
+            capture::run_capture(cam, tx_cap, tx_m1)
+        })
+    };
+
+    #[cfg(not(feature = "camera-support"))]
+    let t1 = {
+        let tx_cap = tx_cap;
+        let tx_m1 = tx_m1;
+        thread::spawn(move || capture::run_capture(tx_cap, tx_m1))
+    };
+
     let t2 = thread::spawn(move || enhance::run_enhance(rx_cap, tx_enh, tx_m2));
     let t3 = thread::spawn(move || detect::run_detect(rx_enh, tx_det, tx_m3));
     let t4 = thread::spawn(move || classify::run_classify(rx_det, tx_cls, tx_m4));
-    let t5 = thread::spawn(move || decide::run_decide(rx_cls, tx_align, tx_m5));
+    let t5 = thread::spawn(move || decide::run_decide(rx_cls, tx_align, tx_m5, shared_port_align));
     let t6 = thread::spawn(move || metrics::run_metrics(rx_metrics));
-    let t7 = thread::spawn(move || controller_service::run_controller_service(tx_controller));
+    let t7 = thread::spawn(move || {
+        controller_service::run_controller_service(tx_controller, shared_port_controller)
+    });
 
     display::run_display(rx_align, frame_size)?;
 

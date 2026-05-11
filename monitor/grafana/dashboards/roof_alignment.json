@@ -23,7 +23,7 @@
         },
         "overrides": []
       },
-      "gridPos": { "h": 4, "w": 5, "x": 0, "y": 0 },
+      "gridPos": { "h": 4, "w": 5, "x": 0, "y": 24 },
       "id": 1,
       "options": {
         "colorMode": "background",
@@ -63,7 +63,7 @@
         },
         "overrides": []
       },
-      "gridPos": { "h": 4, "w": 5, "x": 5, "y": 0 },
+      "gridPos": { "h": 4, "w": 5, "x": 5, "y": 24 },
       "id": 2,
       "options": {
         "orientation": "auto",
@@ -97,7 +97,7 @@
         },
         "overrides": []
       },
-      "gridPos": { "h": 4, "w": 14, "x": 10, "y": 0 },
+      "gridPos": { "h": 4, "w": 14, "x": 10, "y": 24 },
       "id": 3,
       "options": {
         "legend": { "displayMode": "list", "placement": "right", "showLegend": true },
@@ -128,7 +128,7 @@
         },
         "overrides": []
       },
-      "gridPos": { "h": 8, "w": 8, "x": 0, "y": 4 },
+      "gridPos": { "h": 8, "w": 8, "x": 0, "y": 28 },
       "id": 4,
       "options": {
         "legend": { "displayMode": "list", "placement": "bottom", "showLegend": true },
@@ -171,7 +171,7 @@
         },
         "overrides": []
       },
-      "gridPos": { "h": 8, "w": 8, "x": 8, "y": 4 },
+      "gridPos": { "h": 8, "w": 8, "x": 8, "y": 28 },
       "id": 5,
       "options": {
         "legend": { "displayMode": "list", "placement": "bottom", "showLegend": true },
@@ -208,7 +208,7 @@
         },
         "overrides": []
       },
-      "gridPos": { "h": 8, "w": 8, "x": 16, "y": 4 },
+      "gridPos": { "h": 8, "w": 8, "x": 16, "y": 28 },
       "id": 6,
       "options": {
         "legend": { "displayMode": "list", "placement": "bottom", "showLegend": true },
@@ -239,7 +239,7 @@
         },
         "overrides": []
       },
-      "gridPos": { "h": 8, "w": 8, "x": 0, "y": 12 },
+      "gridPos": { "h": 8, "w": 8, "x": 0, "y": 36 },
       "id": 7,
       "options": {
         "legend": { "displayMode": "list", "placement": "bottom", "showLegend": true },
@@ -270,7 +270,7 @@
         },
         "overrides": []
       },
-      "gridPos": { "h": 8, "w": 8, "x": 8, "y": 12 },
+      "gridPos": { "h": 8, "w": 8, "x": 8, "y": 36 },
       "id": 10,
       "options": {
         "legend": { "displayMode": "list", "placement": "bottom", "showLegend": true },
@@ -307,7 +307,7 @@
         },
         "overrides": []
       },
-      "gridPos": { "h": 8, "w": 8, "x": 16, "y": 12 },
+      "gridPos": { "h": 8, "w": 8, "x": 16, "y": 36 },
       "id": 9,
       "options": {
         "legend": { "displayMode": "list", "placement": "bottom", "showLegend": true },
@@ -344,7 +344,7 @@
         },
         "overrides": []
       },
-      "gridPos": { "h": 8, "w": 24, "x": 0, "y": 20 },
+      "gridPos": { "h": 8, "w": 24, "x": 0, "y": 44 },
       "id": 8,
       "options": {
         "legend": { "displayMode": "list", "placement": "bottom", "showLegend": true },
@@ -377,7 +377,7 @@
         },
         "overrides": []
       },
-      "gridPos": { "h": 8, "w": 8, "x": 0, "y": 28 },
+      "gridPos": { "h": 8, "w": 8, "x": 0, "y": 52 },
       "id": 11,
       "options": {
         "colorMode": "value",
@@ -412,7 +412,7 @@
         },
         "overrides": []
       },
-      "gridPos": { "h": 8, "w": 8, "x": 8, "y": 28 },
+      "gridPos": { "h": 8, "w": 8, "x": 8, "y": 52 },
       "id": 12,
       "options": {
         "legend": { "displayMode": "list", "placement": "bottom", "showLegend": true },
@@ -449,7 +449,7 @@
         },
         "overrides": []
       },
-      "gridPos": { "h": 8, "w": 8, "x": 16, "y": 28 },
+      "gridPos": { "h": 8, "w": 8, "x": 16, "y": 52 },
       "id": 13,
       "options": {
         "legend": { "displayMode": "list", "placement": "bottom", "showLegend": true },
@@ -482,7 +482,7 @@
         },
         "overrides": []
       },
-      "gridPos": { "h": 4, "w": 4, "x": 0, "y": 36 },
+      "gridPos": { "h": 4, "w": 4, "x": 0, "y": 0 },
       "id": 14,
       "options": {
         "colorMode": "background",
@@ -527,7 +527,7 @@
         },
         "overrides": []
       },
-      "gridPos": { "h": 4, "w": 4, "x": 4, "y": 36 },
+      "gridPos": { "h": 4, "w": 4, "x": 4, "y": 0 },
       "id": 15,
       "options": {
         "colorMode": "background",
@@ -562,7 +562,7 @@
         },
         "overrides": []
       },
-      "gridPos": { "h": 8, "w": 8, "x": 8, "y": 36 },
+      "gridPos": { "h": 8, "w": 8, "x": 8, "y": 0 },
       "id": 16,
       "options": {
         "legend": { "displayMode": "list", "placement": "bottom", "showLegend": true },
@@ -599,7 +599,7 @@
         },
         "overrides": []
       },
-      "gridPos": { "h": 8, "w": 8, "x": 16, "y": 36 },
+      "gridPos": { "h": 8, "w": 8, "x": 16, "y": 0 },
       "id": 17,
       "options": {
         "legend": { "displayMode": "list", "placement": "bottom", "showLegend": true },
@@ -642,7 +642,7 @@
         },
         "overrides": []
       },
-      "gridPos": { "h": 8, "w": 8, "x": 0, "y": 44 },
+      "gridPos": { "h": 8, "w": 8, "x": 0, "y": 8 },
       "id": 18,
       "options": {
         "legend": { "displayMode": "list", "placement": "bottom", "showLegend": true },
@@ -679,7 +679,7 @@
         },
         "overrides": []
       },
-      "gridPos": { "h": 8, "w": 8, "x": 8, "y": 44 },
+      "gridPos": { "h": 8, "w": 8, "x": 8, "y": 8 },
       "id": 19,
       "options": {
         "legend": { "displayMode": "list", "placement": "bottom", "showLegend": true },
@@ -710,7 +710,7 @@
         },
         "overrides": []
       },
-      "gridPos": { "h": 8, "w": 8, "x": 16, "y": 44 },
+      "gridPos": { "h": 8, "w": 8, "x": 16, "y": 8 },
       "id": 20,
       "options": {
         "legend": { "displayMode": "list", "placement": "bottom", "showLegend": true },
@@ -753,7 +753,7 @@
         },
         "overrides": []
       },
-      "gridPos": { "h": 8, "w": 24, "x": 0, "y": 52 },
+      "gridPos": { "h": 8, "w": 24, "x": 0, "y": 16 },
       "id": 21,
       "options": {
         "legend": { "displayMode": "list", "placement": "bottom", "showLegend": true },

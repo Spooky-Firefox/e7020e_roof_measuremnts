@@ -3,7 +3,7 @@ pub const WINDOW_WIDTH: i32 = 1440;
 #[cfg_attr(feature = "no-display", allow(dead_code))]
 pub const WINDOW_HEIGHT: i32 = 900;
 
-pub const DEFAULT_CAMERA_INDEX: i32 = 4;
+pub const DEFAULT_CAMERA_INDEX: i32 = 0;
 pub const DEFAULT_CAMERA_WIDTH: i32 = 1280;
 pub const DEFAULT_CAMERA_HEIGHT: i32 = 720;
 pub const DEFAULT_CAMERA_FPS: f64 = 30.0;
@@ -29,10 +29,8 @@ pub const HOUGH_THETA_DEG: f64 = 1.0;
 
 pub const CLASS_ANGLE_MARGIN_DEG: f32 = 30.0;
 pub const MIN_CLASSIFIED_LINES: usize = 2;
-pub const MIN_ALIGNMENT_CONFIDENCE: f32 = 0.15;
 
 pub const SERIAL_BAUD_RATE: u32 = 115_200;
-pub const SERIAL_WRITE_TIMEOUT_MS: u64 = 20;
 
 pub const METRICS_HTTP_BIND: &str = "0.0.0.0:9090";
 pub const CONTROLLER_HTTP_BIND: &str = "0.0.0.0:9091";

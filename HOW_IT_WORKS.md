@@ -103,26 +103,28 @@ Those numbers are used both for telemetry and for deciding whether the frame con
 
 ## Stage 5: Alignment Estimate
 
-`src/decide.rs` builds one `AlignmentReport` per frame.
+`src/classify.rs` builds the `AlignmentReport`, and `src/decide.rs` logs it, exports metrics, and forwards serial output.
 
-The primary estimate is the vertical-line cluster, because the corridor-following use case defines zero degrees relative to the roof's vertical grid lines. Horizontal lines are still measured and logged as a cross-check.
+The preferred estimate is still the vertical-line cluster, because the corridor-following use case defines zero degrees relative to the roof's vertical grid lines. But horizontal lines are not just logged: if the frame does not contain enough vertical inliers and the horizontal cluster is the only reliable one, the final `angle_from_vertical_deg` falls back to that horizontal-based estimate. That matters in this corridor because some sections show many clearer horizontal seams than vertical ones, while other sections do the opposite.
 
 The report includes:
 
 - chosen signed angle from vertical
-- dominant axis used for the estimate
+- dominant axis used for the estimate (`vertical` or `horizontal`)
 - confidence
 - total, vertical, horizontal, and outlier counts
 - min/max/spread/stddev for vertical and horizontal clusters
 
-If confidence is high enough, the stage also emits a serial-ready CSV frame.
+The current selection rule is simple: prefer vertical when it has at least `MIN_CLASSIFIED_LINES`, otherwise use horizontal when it has at least that many lines, otherwise report no dominant axis.
+
+The decide stage emits a compact serial command frame each cycle.
 
 ## Serial Output
 
-`src/serial.rs` is currently a non-blocking boilerplate path. If `ROOF_SERIAL_PORT` is set, the app attempts to open that port and send a CSV line shaped like this:
+`src/serial.rs` is currently a non-blocking boilerplate path. If `ROOF_SERIAL_PORT` is set, the app attempts to open that port and send a command shaped like this:
 
 ```text
-ALIGN,<angle_deg>,<confidence>,<total>,<vertical>,<horizontal>,<v_min>,<v_max>,<v_stddev>,<h_stddev>,<h_cross_check>
+align <angle_deg> <confidence>
 ```
 
 This is intentionally simple for bring-up with a Pico2. The internal data model is already structured so a binary protocol can replace the CSV encoder later without changing the upstream pipeline.
@@ -145,6 +147,8 @@ The UI adds:
 - serial connect and disconnect controls
 - a joystick for steering and throttle PWM
 - steering and throttle sensitivity sliders
+- constants tuning controls with preset dropdown names and free-text entry
+- constants file upload that expands into batched `const <name> <value>` commands
 - manual and auto mode buttons
 - live telemetry polling
 - controller log download links
@@ -164,6 +168,8 @@ The controller thread keeps the latest value for each field in memory, writes th
 ## Metrics And Grafana
 
 `src/metrics.rs` exposes Prometheus metrics on `:9090/metrics`. The dashboard under `monitor/` tracks both roof-alignment and controller data:
+
+Controller/vehicle panels are placed at the top of the dashboard so link state, mode, PWM, speed, and tuning are immediately visible during operation.
 
 - chosen angle
 - confidence

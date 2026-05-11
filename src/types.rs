@@ -49,7 +49,6 @@ pub struct AngleClusterStats {
 pub struct AlignmentReport {
     pub dominant_axis: AxisClass,
     pub angle_from_vertical_deg: f32,
-    pub horizontal_cross_check_deg: Option<f32>,
     pub confidence: f32,
     pub vertical: AngleClusterStats,
     pub horizontal: AngleClusterStats,
@@ -62,7 +61,6 @@ impl Default for AlignmentReport {
         Self {
             dominant_axis: AxisClass::Outlier,
             angle_from_vertical_deg: 0.0,
-            horizontal_cross_check_deg: None,
             confidence: 0.0,
             vertical: AngleClusterStats::default(),
             horizontal: AngleClusterStats::default(),

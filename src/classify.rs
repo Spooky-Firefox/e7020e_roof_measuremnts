@@ -1,6 +1,6 @@
 use anyhow::Result;
-use crossbeam_channel::{Receiver, Sender};
 use cpu_time::ThreadTime;
+use crossbeam_channel::{Receiver, Sender};
 use std::time::Instant;
 
 use crate::{
@@ -137,10 +137,6 @@ impl ClassifyStage {
             AxisClass::Outlier => 0.0,
         };
 
-        let horizontal_cross_check_deg =
-            (horizontal_stats.count >= consts::MIN_CLASSIFIED_LINES as u32)
-                .then_some(horizontal_stats.mean_deg);
-
         let spread = match dominant_axis {
             AxisClass::Vertical => vertical_stats.stddev_deg,
             AxisClass::Horizontal => horizontal_stats.stddev_deg,
@@ -157,13 +153,13 @@ impl ClassifyStage {
         } else {
             0.0
         };
-        let spread_score = (1.0 - (spread / consts::CLASS_ANGLE_MARGIN_DEG).clamp(0.0, 1.0)).max(0.0);
+        let spread_score =
+            (1.0 - (spread / consts::CLASS_ANGLE_MARGIN_DEG).clamp(0.0, 1.0)).max(0.0);
         let confidence = (inlier_ratio * spread_score).clamp(0.0, 1.0);
 
         AlignmentReport {
             dominant_axis,
             angle_from_vertical_deg,
-            horizontal_cross_check_deg,
             confidence,
             vertical: vertical_stats,
             horizontal: horizontal_stats,
