@@ -4,9 +4,10 @@ metadata:
   name: e7012e-grafana
   annotations:
     cert-manager.io/cluster-issuer: letsencrypt-prod
-    nginx.ingress.kubernetes.io/ssl-redirect: "true"
+    traefik.ingress.kubernetes.io/router.entrypoints: websecure
+    traefik.ingress.kubernetes.io/router.tls: "true"
 spec:
-  ingressClassName: nginx
+  ingressClassName: traefik
   tls:
     - hosts:
         - e7012e.ronstad.se
@@ -29,9 +30,10 @@ metadata:
   name: e7012e-prometheus
   annotations:
     cert-manager.io/cluster-issuer: letsencrypt-prod
-    nginx.ingress.kubernetes.io/ssl-redirect: "true"
+    traefik.ingress.kubernetes.io/router.entrypoints: websecure
+    traefik.ingress.kubernetes.io/router.tls: "true"
 spec:
-  ingressClassName: nginx
+  ingressClassName: traefik
   tls:
     - hosts:
         - prometheus.e7012e.ronstad.se
@@ -54,26 +56,16 @@ metadata:
   name: e7012e-car-ui
   annotations:
     cert-manager.io/cluster-issuer: letsencrypt-prod
-    nginx.ingress.kubernetes.io/ssl-redirect: "true"
+    traefik.ingress.kubernetes.io/router.entrypoints: websecure
+    traefik.ingress.kubernetes.io/router.tls: "true"
 spec:
-  ingressClassName: nginx
+  ingressClassName: traefik
   tls:
     - hosts:
         - car.ronstad.se
-        - car.ronstd.se
       secretName: e7012e-car-ui-tls
   rules:
     - host: car.ronstad.se
-      http:
-        paths:
-          - path: /
-            pathType: Prefix
-            backend:
-              service:
-                name: vehicle-ui-external
-                port:
-                  number: 9091
-    - host: car.ronstd.se
       http:
         paths:
           - path: /

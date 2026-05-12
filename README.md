@@ -95,9 +95,8 @@ Kubernetes manifests for the app + monitoring stack are under `k8s/`, and an Arg
 - `https://e7012e.ronstad.se` -> Grafana
 - `https://prometheus.e7012e.ronstad.se` -> Prometheus
 - `https://car.ronstad.se` -> controller/car UI
-- `https://car.ronstd.se` -> controller/car UI alias
 
-Ingress resources are configured for TLS and HTTPS redirect via nginx ingress + cert-manager (`letsencrypt-prod` cluster issuer).
+Ingress resources are configured for TLS via Traefik ingress + cert-manager (`letsencrypt-prod` cluster issuer).
 
 ### Argo CD setup
 
@@ -117,6 +116,7 @@ Ingress resources are configured for TLS and HTTPS redirect via nginx ingress + 
 | `SSH_REMOTE_USER` | `olle` | SSH tunnel destination user |
 | `SSH_REMOTE_PORT` | `9091` | Legacy single-tunnel remote bind port used in `SSH_TUNNELS` default |
 | `SSH_LOCAL_PORT` | `9091` | Legacy single-tunnel local bind port used in `SSH_TUNNELS` default |
+| `SSH_REMOTE_BIND_ADDR` | `0.0.0.0` | Remote bind address for reverse tunnels so cluster ingress can reach forwarded ports |
 | `SSH_TUNNELS` | `9091:9091,9092:9092` | Comma-separated `remote:local` reverse tunnel mappings (UI + Prometheus by default) |
 
 ## Controller Bridge

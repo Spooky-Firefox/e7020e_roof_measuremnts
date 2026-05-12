@@ -17,6 +17,7 @@ SSH_REMOTE_HOST="${SSH_REMOTE_HOST:-ronstad.se}"
 SSH_REMOTE_USER="${SSH_REMOTE_USER:-olle}"
 SSH_REMOTE_PORT="${SSH_REMOTE_PORT:-9091}"
 SSH_LOCAL_PORT="${SSH_LOCAL_PORT:-9091}"
+SSH_REMOTE_BIND_ADDR="${SSH_REMOTE_BIND_ADDR:-0.0.0.0}"
 SSH_TUNNELS="${SSH_TUNNELS:-${SSH_REMOTE_PORT}:${SSH_LOCAL_PORT},9092:9092}"
 
 IFS=',' read -r -a TUNNEL_MAPPINGS <<< "$(echo "$SSH_TUNNELS" | tr -d ' ')"
@@ -57,7 +58,7 @@ cleanup() {
     for mapping in "${TUNNEL_MAPPINGS[@]}"; do
         remote_port="${mapping%%:*}"
         local_port="${mapping##*:}"
-        pkill -f "autossh.*${remote_port}:127.0.0.1:${local_port} ${SSH_REMOTE_USER}@${SSH_REMOTE_HOST}" 2>/dev/null || true
+        pkill -f "autossh.*${SSH_REMOTE_BIND_ADDR}:${remote_port}:127.0.0.1:${local_port} ${SSH_REMOTE_USER}@${SSH_REMOTE_HOST}" 2>/dev/null || true
     done
 }
 
@@ -143,7 +144,7 @@ if [ "$ENABLE_SSH_TUNNEL" = "1" ]; then
                 for mapping in "${TUNNEL_MAPPINGS[@]}"; do
                     remote_port="${mapping%%:*}"
                     local_port="${mapping##*:}"
-                    if pgrep -af "autossh.*${remote_port}:127.0.0.1:${local_port} ${SSH_REMOTE_USER}@${SSH_REMOTE_HOST}" >/dev/null 2>&1; then
+                    if pgrep -af "autossh.*${SSH_REMOTE_BIND_ADDR}:${remote_port}:127.0.0.1:${local_port} ${SSH_REMOTE_USER}@${SSH_REMOTE_HOST}" >/dev/null 2>&1; then
                         continue
                     fi
 
@@ -157,7 +158,7 @@ if [ "$ENABLE_SSH_TUNNEL" = "1" ]; then
                         -o ServerAliveInterval=30 \
                         -o ServerAliveCountMax=3 \
                         -o ExitOnForwardFailure=yes \
-                        -R "127.0.0.1:${remote_port}:127.0.0.1:${local_port}" "${SSH_REMOTE_USER}@${SSH_REMOTE_HOST}" >> "$TUNNEL_LOG" 2>&1
+                        -R "${SSH_REMOTE_BIND_ADDR}:${remote_port}:127.0.0.1:${local_port}" "${SSH_REMOTE_USER}@${SSH_REMOTE_HOST}" >> "$TUNNEL_LOG" 2>&1
 
                     echo "[$(date)] Autossh tunnel established on remote port ${remote_port}"
                 done
