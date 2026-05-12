@@ -1,10 +1,14 @@
 use anyhow::Result;
 use cpu_time::ThreadTime;
 use crossbeam_channel::{Receiver, Sender};
-use log::{debug, info};
-use std::time::Instant;
+use log::{debug, info, warn};
+use std::fs::{self, File};
+use std::io::{BufWriter, Write};
+use std::path::PathBuf;
+use std::time::{Instant, SystemTime, UNIX_EPOCH};
 
 use crate::{
+    consts,
     serial::send_alignment,
     shared_serial::SharedSerialPort,
     types::{AlignmentMsg, ClassifiedMsg, MetricsMsg},
@@ -57,6 +61,57 @@ impl DecideStage {
     }
 }
 
+struct CameraCsvLogger {
+    writer: BufWriter<File>,
+}
+
+impl CameraCsvLogger {
+    fn new() -> Result<Self> {
+        fs::create_dir_all(consts::CONTROLLER_LOG_DIR)?;
+        let file = File::create(new_camera_log_path())?;
+        let mut writer = BufWriter::new(file);
+        writeln!(
+            writer,
+            "timestamp_us,axis,angle_from_vertical_deg,confidence,total_lines,vertical_lines,horizontal_lines,outlier_lines,vertical_mean_deg,horizontal_mean_deg,vertical_stddev_deg,horizontal_stddev_deg"
+        )?;
+        writer.flush()?;
+        Ok(Self { writer })
+    }
+
+    fn write_report(&mut self, report: &crate::types::AlignmentReport) -> Result<()> {
+        let now_us = SystemTime::now()
+            .duration_since(UNIX_EPOCH)
+            .unwrap_or_default()
+            .as_micros();
+        writeln!(
+            self.writer,
+            "{},{},{:.6},{:.4},{},{},{},{},{:.6},{:.6},{:.6},{:.6}",
+            now_us,
+            report.dominant_axis.as_str(),
+            report.angle_from_vertical_deg,
+            report.confidence,
+            report.total_lines,
+            report.vertical.count,
+            report.horizontal.count,
+            report.outlier_count,
+            report.vertical.mean_deg,
+            report.horizontal.mean_deg,
+            report.vertical.stddev_deg,
+            report.horizontal.stddev_deg,
+        )?;
+        self.writer.flush()?;
+        Ok(())
+    }
+}
+
+fn new_camera_log_path() -> PathBuf {
+    let millis = SystemTime::now()
+        .duration_since(UNIX_EPOCH)
+        .unwrap_or_default()
+        .as_millis();
+    PathBuf::from(consts::CONTROLLER_LOG_DIR).join(format!("camera_alignment_{millis}.csv"))
+}
+
 pub fn run_decide(
     rx: Receiver<ClassifiedMsg>,
     tx: Sender<AlignmentMsg>,
@@ -64,10 +119,24 @@ pub fn run_decide(
     shared_port: SharedSerialPort,
 ) -> Result<()> {
     let mut stage = DecideStage::new(shared_port);
+    let mut camera_csv = match CameraCsvLogger::new() {
+        Ok(logger) => Some(logger),
+        Err(error) => {
+            warn!("[camera-csv] failed to initialize log file: {error:#}");
+            None
+        }
+    };
+
     for msg in rx {
         let t_real = Instant::now();
         let t_cpu = ThreadTime::now();
         let out = stage.process(msg);
+
+        if let Some(logger) = camera_csv.as_mut() {
+            if let Err(error) = logger.write_report(&out.report) {
+                warn!("[camera-csv] failed to write row: {error}");
+            }
+        }
 
         tx_metrics
             .try_send(MetricsMsg {
