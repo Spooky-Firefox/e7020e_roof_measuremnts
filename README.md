@@ -13,7 +13,7 @@ The application is headless by default, publishes Prometheus metrics on port `90
 
 - [HOW_IT_WORKS.md](HOW_IT_WORKS.md): full pipeline walkthrough, controller bridge, metrics, and tuning notes
 - `src/consts.rs`: camera, Hough, confidence, and HTTP bind defaults
-- `monitor/`: Prometheus and Grafana stack for dashboarding
+- `k8s/` and `argocd/`: Prometheus, Grafana, ingress, and Argo CD sync manifests
 
 ## Runtime Surfaces
 
@@ -22,8 +22,8 @@ The application is headless by default, publishes Prometheus metrics on port `90
 | Metrics exporter | `http://127.0.0.1:9090/metrics` | Prometheus scrape endpoint for vision and controller metrics |
 | Controller UI | `http://127.0.0.1:9091/` | Browser UI for connect, manual control, mode switching, and telemetry |
 | Controller API | `http://127.0.0.1:9091/api/*` | JSON API for ports, connect, commands, telemetry, and log download |
-| Prometheus | `http://127.0.0.1:9092/` | Monitoring stack endpoint from `monitor/docker-compose.yml` |
-| Grafana | `http://127.0.0.1:3000/` | Dashboards for roof alignment and RP2350 telemetry |
+| Prometheus | `https://prometheus.e7012e.ronstad.se` | Remote monitoring endpoint served through Traefik ingress |
+| Grafana | `https://e7012e.ronstad.se` | Dashboards for roof alignment and RP2350 telemetry |
 
 The default Grafana dashboard places vehicle/controller panels at the top so controller health and motion state are visible first during bring-up.
 
@@ -48,8 +48,7 @@ The default Grafana dashboard places vehicle/controller panels at the top so con
 | `cargo build` | Build the default headless app |
 | `cargo run` | Run the headless pipeline with metrics and controller UI |
 | `cargo run --no-default-features` | Run with the local OpenCV debug display enabled |
-| `./start_server.sh` | Build the app, optionally start Prometheus/Grafana, and launch the service |
-| `cd monitor && docker compose up -d` | Start only the Prometheus/Grafana monitoring stack |
+| `./start_server.sh` | Build the app, launch the service, and keep reverse SSH tunnels alive |
 
 ### Headless default
 
@@ -76,17 +75,16 @@ This opens the OpenCV overlay window so you can inspect the raw frame, processed
 The script:
 
 - creates timestamped logs under `logs/`
-- starts `monitor/docker-compose.yml` when Docker is available
 - waits for `:9090/metrics` and `:9091/` to come up
 - optionally creates `autossh` reverse tunnels for controller UI and Prometheus
 
 ## Kubernetes + Argo CD
 
-Kubernetes manifests for the app + monitoring stack are under `k8s/`, and an Argo CD `Application` is under `argocd/`.
+Kubernetes manifests for the monitoring stack + ingress are under `k8s/`, and an Argo CD `Application` is under `argocd/`.
 
 ### Files
 
-- `k8s/base/`: namespace, app deployment/service, Prometheus, Grafana, and ingress
+- `k8s/base/`: namespace, Prometheus, Grafana, vehicle UI external service, and ingress
 - `k8s/overlays/prod/`: production overlay and image tag pinning
 - `argocd/e7012e-roof-stack-application.yaml`: Argo CD app definition
 
@@ -101,8 +99,7 @@ Ingress resources are configured for TLS via Traefik ingress + cert-manager (`le
 ### Argo CD setup
 
 1. Update `repoURL` in `argocd/e7012e-roof-stack-application.yaml`.
-2. Replace the placeholder app image in `k8s/base/roof-control-hub/deployment.yaml` (or adjust `k8s/overlays/prod/kustomization.yaml`).
-3. Apply the Argo CD application manifest.
+2. Apply the Argo CD application manifest.
 
 ## Environment Variables
 
@@ -110,7 +107,6 @@ Ingress resources are configured for TLS via Traefik ingress + cert-manager (`le
 | -------- | ------- | ------- |
 | `ROOF_CAMERA_INDEX` | `4` | Select which camera device to open |
 | `ROOF_SERIAL_PORT` | unset | When set, forwards alignment CSV output to that serial port |
-| `START_MONITOR` | `1` in `start_server.sh` | Start the Prometheus/Grafana stack automatically |
 | `ENABLE_SSH_TUNNEL` | `1` in `start_server.sh` | Keep a reverse tunnel for the controller UI alive via `autossh` |
 | `SSH_REMOTE_HOST` | `ronstad.se` | SSH tunnel destination host |
 | `SSH_REMOTE_USER` | `olle` | SSH tunnel destination user |

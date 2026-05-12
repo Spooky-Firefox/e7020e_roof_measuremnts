@@ -1,3 +1,4 @@
 /target
 Cargo.lock
 controller_logs/
+/logs

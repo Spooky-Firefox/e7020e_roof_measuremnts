@@ -4,12 +4,10 @@ set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 LOG_DIR="${SCRIPT_DIR}/logs"
-MONITOR_DIR="${SCRIPT_DIR}/monitor"
 mkdir -p "$LOG_DIR"
 
 TIMESTAMP="$(date +%Y%m%d_%H%M%S)"
 APP_LOG="${LOG_DIR}/roof_control_hub_${TIMESTAMP}.log"
-MONITOR_LOG="${LOG_DIR}/monitor_${TIMESTAMP}.log"
 TUNNEL_LOG="${LOG_DIR}/tunnel_${TIMESTAMP}.log"
 
 ENABLE_SSH_TUNNEL="${ENABLE_SSH_TUNNEL:-1}"
@@ -29,7 +27,6 @@ for mapping in "${TUNNEL_MAPPINGS[@]}"; do
 done
 
 APP_PID=""
-MONITOR_STARTED=0
 TUNNEL_PID=""
 
 cleanup() {
@@ -39,14 +36,6 @@ cleanup() {
         echo "[$(date)] Stopping roof control hub (PID $APP_PID)..."
         kill -TERM "$APP_PID" 2>/dev/null || true
         wait "$APP_PID" 2>/dev/null || true
-    fi
-
-    if [ "$MONITOR_STARTED" -eq 1 ] && [ -d "$MONITOR_DIR" ]; then
-        echo "[$(date)] Stopping monitor stack..."
-        (
-            cd "$MONITOR_DIR"
-            docker compose down >> "$MONITOR_LOG" 2>&1 || true
-        )
     fi
 
     if [ -n "$TUNNEL_PID" ] && kill -0 "$TUNNEL_PID" 2>/dev/null; then
@@ -66,23 +55,9 @@ trap cleanup EXIT SIGINT SIGTERM
 
 echo "Roof Control Hub Startup"
 echo "App log: ${APP_LOG}"
-echo "Monitor log: ${MONITOR_LOG}"
 echo "Tunnel log: ${TUNNEL_LOG}"
 
 cd "$SCRIPT_DIR"
-
-if [ "${START_MONITOR:-1}" = "1" ] && [ -d "$MONITOR_DIR" ]; then
-    if command -v docker >/dev/null 2>&1; then
-        echo "[$(date)] Starting Prometheus/Grafana stack..."
-        (
-            cd "$MONITOR_DIR"
-            docker compose up -d >> "$MONITOR_LOG" 2>&1
-        )
-        MONITOR_STARTED=1
-    else
-        echo "[$(date)] docker not found, skipping monitor startup"
-    fi
-fi
 
 echo "[$(date)] Building roof control hub..."
 cargo build >> "$APP_LOG" 2>&1
@@ -115,11 +90,6 @@ done
 echo "[$(date)] Roof control hub is ready"
 echo "[$(date)] Controller UI: http://localhost:9091"
 echo "[$(date)] Prometheus metrics: http://localhost:9090/metrics"
-
-if [ "$MONITOR_STARTED" -eq 1 ]; then
-    echo "[$(date)] Prometheus: http://localhost:9092"
-    echo "[$(date)] Grafana: http://localhost:3000"
-fi
 
 if [ "$ENABLE_SSH_TUNNEL" = "1" ]; then
     if ! command -v autossh >/dev/null 2>&1; then

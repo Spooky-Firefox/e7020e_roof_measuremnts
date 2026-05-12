@@ -38,7 +38,13 @@ The process exposes three different operational surfaces:
 2. Controller browser UI and JSON API on `:9091`.
 3. Optional downstream serial output from the alignment stage when `ROOF_SERIAL_PORT` is set.
 
-The `monitor/` stack is configured so Prometheus listens on host port `9092`, scrapes the app on `host.docker.internal:9090`, and Grafana stays on `:3000`.
+In the current deployment model, this process runs on the laptop/vehicle and reverse-tunnels ports to `ronstad.se` using `autossh`.
+
+- `9091` is tunneled for controller UI access via `car.ronstad.se`.
+- `9092` is tunneled for Prometheus access via `prometheus.e7012e.ronstad.se`.
+- Grafana is served via `e7012e.ronstad.se`.
+
+Those public endpoints are terminated by Traefik ingress with cert-manager TLS.
 
 ## Why The Old BW Path Failed
 
@@ -192,12 +198,7 @@ Controller/vehicle panels are placed at the top of the dashboard so link state, 
 - hall delta-t
 - Kalman state values
 
-The bundled `monitor/docker-compose.yml` starts:
-
-- Prometheus on host `:9092`
-- Grafana on host `:3000`
-
-Grafana is provisioned against the internal container URL `http://prometheus:9090`, while Prometheus scrapes the Rust app on host `:9090`.
+Prometheus and Grafana are hosted on `ronstad.se` in Kubernetes and exposed via Traefik ingress. The car UI ingress routes to an external backend (`vehicle-ui-external`) so traffic can reach the reverse-tunneled UI port when the local service is running.
 
 ## Debug Display
 
