@@ -12,7 +12,7 @@ data:
       - job_name: roof-control-hub
         static_configs:
           - targets:
-              - e7012e-roof-control-hub:9090
+              - ronstad.se:9092
       - job_name: prometheus
         static_configs:
           - targets:
