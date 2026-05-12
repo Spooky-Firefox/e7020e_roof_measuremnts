@@ -5,8 +5,6 @@ namespace: e7012e-roof
 
 resources:
   - namespace.yaml
-  - roof-control-hub/deployment.yaml
-  - roof-control-hub/service.yaml
   - monitoring/prometheus-config.yaml
   - monitoring/prometheus-deployment.yaml
   - monitoring/prometheus-service.yaml
@@ -14,4 +12,5 @@ resources:
   - monitoring/grafana-datasource-config.yaml
   - monitoring/grafana-deployment.yaml
   - monitoring/grafana-service.yaml
+  - vehicle-ui-external.yaml
   - ingress.yaml

@@ -70,7 +70,7 @@ spec:
             pathType: Prefix
             backend:
               service:
-                name: e7012e-roof-control-hub
+                name: vehicle-ui-external
                 port:
                   number: 9091
     - host: car.ronstd.se
@@ -80,6 +80,6 @@ spec:
             pathType: Prefix
             backend:
               service:
-                name: e7012e-roof-control-hub
+                name: vehicle-ui-external
                 port:
                   number: 9091
