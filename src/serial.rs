@@ -5,11 +5,13 @@ use crate::types::AlignmentReport;
 
 /// Format alignment data as a command string for the RP2350.
 ///
-/// Format: `align <angle_rad> <confidence>\n`
-/// Angle is in radians, confidence in [0, 1].
+/// Format: `align <angle_deg> <confidence>\n`
+/// Angle is in degrees, confidence in [0, 1].
 pub fn encode_alignment_command(report: &AlignmentReport) -> String {
-    let angle_rad = (report.angle_from_vertical_deg as f64).to_radians();
-    format!("align {:.6} {:.4}\n", angle_rad, report.confidence)
+    format!(
+        "align {:.6} {:.4}\n",
+        report.angle_from_vertical_deg, report.confidence
+    )
 }
 
 /// Send alignment data to the shared serial port if one is open.
