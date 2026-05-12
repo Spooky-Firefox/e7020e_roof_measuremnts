@@ -41,9 +41,10 @@ impl DecideStage {
             msg.report.vertical.stddev_deg,
             msg.report.horizontal.stddev_deg,
         );
+        let angle_rad = (msg.report.angle_from_vertical_deg as f64).to_radians();
         debug!(
-            "[align] command=align {:.2} {:.3}",
-            msg.report.angle_from_vertical_deg, msg.report.confidence,
+            "[align] command=align {:.6} {:.4}",
+            angle_rad, msg.report.confidence,
         );
 
         AlignmentMsg {

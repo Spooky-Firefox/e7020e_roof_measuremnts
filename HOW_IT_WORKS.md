@@ -124,8 +124,10 @@ The decide stage emits a compact serial command frame each cycle.
 `src/serial.rs` is currently a non-blocking boilerplate path. If `ROOF_SERIAL_PORT` is set, the app attempts to open that port and send a command shaped like this:
 
 ```text
-align <angle_deg> <confidence>
+align <angle_rad> <confidence>
 ```
+
+Angle is in radians (6 decimal places). Confidence is in `[0, 1]` (4 decimal places).
 
 This is intentionally simple for bring-up with a Pico2. The internal data model is already structured so a binary protocol can replace the CSV encoder later without changing the upstream pipeline.
 
