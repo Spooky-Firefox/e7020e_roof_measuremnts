@@ -3,9 +3,19 @@ kind: Service
 metadata:
   name: vehicle-ui-external
 spec:
-  type: ExternalName
-  externalName: ronstad.se
+  type: ClusterIP
   ports:
     - port: 9091
       targetPort: 9091
       protocol: TCP
+---
+apiVersion: v1
+kind: Endpoints
+metadata:
+  name: vehicle-ui-external
+subsets:
+  - addresses:
+      - ip: 192.168.1.136
+    ports:
+      - port: 9091
+        protocol: TCP

@@ -12,7 +12,7 @@ data:
       - job_name: roof-control-hub
         static_configs:
           - targets:
-              - ronstad.se:9092
+              - 192.168.1.136:9092
       - job_name: prometheus
         static_configs:
           - targets:

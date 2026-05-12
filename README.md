@@ -113,7 +113,7 @@ Ingress resources are configured for TLS via Traefik ingress + cert-manager (`le
 | `SSH_REMOTE_PORT` | `9091` | Legacy single-tunnel remote bind port used in `SSH_TUNNELS` default |
 | `SSH_LOCAL_PORT` | `9091` | Legacy single-tunnel local bind port used in `SSH_TUNNELS` default |
 | `SSH_REMOTE_BIND_ADDR` | `0.0.0.0` | Remote bind address for reverse tunnels so cluster ingress can reach forwarded ports |
-| `SSH_TUNNELS` | `9091:9091,9092:9092` | Comma-separated `remote:local` reverse tunnel mappings (UI + Prometheus by default) |
+| `SSH_TUNNELS` | `9091:9091,9092:9090` | Comma-separated `remote:local` reverse tunnel mappings (UI + Prometheus by default) |
 
 ## Controller Bridge
 
