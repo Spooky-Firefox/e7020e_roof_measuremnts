@@ -16,6 +16,9 @@ serde_json = "1.0"
 serialport = "4.8.1"
 tiny_http = "0.12"
 
+[build-dependencies]
+pkg-config = "0.3"
+
 [features]
 default = ["camera-support", "no-display"]
 camera-support = []

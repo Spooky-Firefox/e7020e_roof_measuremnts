@@ -7,8 +7,12 @@ use crate::types::AlignmentMsg;
 use crate::{consts, types::AxisClass};
 
 #[cfg(not(feature = "no-display"))]
+#[cfg(has_opencv_algorithm_hint)]
+use opencv::core::AlgorithmHint;
+
+#[cfg(not(feature = "no-display"))]
 use opencv::{
-    core::{self, AlgorithmHint},
+    core::{self},
     highgui, imgproc,
     prelude::*,
 };
@@ -44,6 +48,7 @@ impl DisplayStage {
     }
 
     pub fn render(&mut self, msg: AlignmentMsg) -> Result<()> {
+        #[cfg(has_opencv_algorithm_hint)]
         imgproc::cvt_color(
             &msg.gray_contrast,
             &mut self.gray_bgr,
@@ -51,6 +56,14 @@ impl DisplayStage {
             0,
             AlgorithmHint::ALGO_HINT_DEFAULT,
         )?;
+        #[cfg(not(has_opencv_algorithm_hint))]
+        imgproc::cvt_color(
+            &msg.gray_contrast,
+            &mut self.gray_bgr,
+            imgproc::COLOR_GRAY2BGR,
+            0,
+        )?;
+        #[cfg(has_opencv_algorithm_hint)]
         imgproc::cvt_color(
             &msg.edges,
             &mut self.edges_bgr,
@@ -58,6 +71,8 @@ impl DisplayStage {
             0,
             AlgorithmHint::ALGO_HINT_DEFAULT,
         )?;
+        #[cfg(not(has_opencv_algorithm_hint))]
+        imgproc::cvt_color(&msg.edges, &mut self.edges_bgr, imgproc::COLOR_GRAY2BGR, 0)?;
         msg.frame.copy_to(&mut self.annotated)?;
 
         for line in &msg.lines {
@@ -119,13 +134,22 @@ impl DisplayStage {
 
         let w = self.frame_size.width;
         let h = self.frame_size.height;
-        msg.frame.copy_to(&mut Mat::roi_mut(&mut self.canvas, core::Rect::new(0, 0, w, h))?)?;
-        self.gray_bgr
-            .copy_to(&mut Mat::roi_mut(&mut self.canvas, core::Rect::new(w, 0, w, h))?)?;
-        self.edges_bgr
-            .copy_to(&mut Mat::roi_mut(&mut self.canvas, core::Rect::new(0, h, w, h))?)?;
-        self.annotated
-            .copy_to(&mut Mat::roi_mut(&mut self.canvas, core::Rect::new(w, h, w, h))?)?;
+        msg.frame.copy_to(&mut Mat::roi_mut(
+            &mut self.canvas,
+            core::Rect::new(0, 0, w, h),
+        )?)?;
+        self.gray_bgr.copy_to(&mut Mat::roi_mut(
+            &mut self.canvas,
+            core::Rect::new(w, 0, w, h),
+        )?)?;
+        self.edges_bgr.copy_to(&mut Mat::roi_mut(
+            &mut self.canvas,
+            core::Rect::new(0, h, w, h),
+        )?)?;
+        self.annotated.copy_to(&mut Mat::roi_mut(
+            &mut self.canvas,
+            core::Rect::new(w, h, w, h),
+        )?)?;
 
         highgui::imshow("roof-alignment", &self.canvas)?;
         Ok(())

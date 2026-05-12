@@ -1,7 +1,9 @@
 use anyhow::Result;
-use crossbeam_channel::{Receiver, Sender};
 use cpu_time::ThreadTime;
-use opencv::{core, core::AlgorithmHint, imgproc, prelude::*};
+use crossbeam_channel::{Receiver, Sender};
+#[cfg(has_opencv_algorithm_hint)]
+use opencv::core::AlgorithmHint;
+use opencv::{core, imgproc, prelude::*};
 use std::time::Instant;
 
 use crate::{
@@ -75,7 +77,13 @@ impl EnhanceStage {
         Ok(cropped)
     }
 
-    fn blur_and_canny(src: &Mat, blurred: &mut Mat, edges: &mut Mat, blur_ksize: i32) -> Result<()> {
+    fn blur_and_canny(
+        src: &Mat,
+        blurred: &mut Mat,
+        edges: &mut Mat,
+        blur_ksize: i32,
+    ) -> Result<()> {
+        #[cfg(has_opencv_algorithm_hint)]
         imgproc::gaussian_blur(
             src,
             blurred,
@@ -84,6 +92,15 @@ impl EnhanceStage {
             0.0,
             opencv::core::BORDER_DEFAULT,
             AlgorithmHint::ALGO_HINT_DEFAULT,
+        )?;
+        #[cfg(not(has_opencv_algorithm_hint))]
+        imgproc::gaussian_blur(
+            src,
+            blurred,
+            opencv::core::Size::new(blur_ksize, blur_ksize),
+            0.0,
+            0.0,
+            opencv::core::BORDER_DEFAULT,
         )?;
         imgproc::canny(
             blurred,
@@ -99,6 +116,7 @@ impl EnhanceStage {
     pub fn process(&mut self, frame: Mat) -> Result<EnhanceMsg> {
         let cropped = Self::crop_center(&frame)?;
         Self::maybe_downscale(&cropped, &mut self.cropped_frame)?;
+        #[cfg(has_opencv_algorithm_hint)]
         imgproc::cvt_color(
             &self.cropped_frame,
             &mut self.lab,
@@ -106,9 +124,15 @@ impl EnhanceStage {
             0,
             AlgorithmHint::ALGO_HINT_DEFAULT,
         )?;
+        #[cfg(not(has_opencv_algorithm_hint))]
+        imgproc::cvt_color(
+            &self.cropped_frame,
+            &mut self.lab,
+            imgproc::COLOR_BGR2Lab,
+            0,
+        )?;
         core::extract_channel(&self.lab, &mut self.gray, 0)?;
-        self.clahe
-            .apply(&self.gray, &mut self.gray_contrast)?;
+        self.clahe.apply(&self.gray, &mut self.gray_contrast)?;
 
         Self::blur_and_canny(
             &self.gray_contrast,
