@@ -78,7 +78,32 @@ The script:
 - creates timestamped logs under `logs/`
 - starts `monitor/docker-compose.yml` when Docker is available
 - waits for `:9090/metrics` and `:9091/` to come up
-- optionally creates an `autossh` reverse tunnel for the controller UI
+- optionally creates `autossh` reverse tunnels for controller UI and Prometheus
+
+## Kubernetes + Argo CD
+
+Kubernetes manifests for the app + monitoring stack are under `k8s/`, and an Argo CD `Application` is under `argocd/`.
+
+### Files
+
+- `k8s/base/`: namespace, app deployment/service, Prometheus, Grafana, and ingress
+- `k8s/overlays/prod/`: production overlay and image tag pinning
+- `argocd/e7012e-roof-stack-application.yaml`: Argo CD app definition
+
+### Ingress hosts
+
+- `https://e7012e.ronstad.se` -> Grafana
+- `https://prometheus.e7012e.ronstad.se` -> Prometheus
+- `https://car.ronstad.se` -> controller/car UI
+- `https://car.ronstd.se` -> controller/car UI alias
+
+Ingress resources are configured for TLS and HTTPS redirect via nginx ingress + cert-manager (`letsencrypt-prod` cluster issuer).
+
+### Argo CD setup
+
+1. Update `repoURL` in `argocd/e7012e-roof-stack-application.yaml`.
+2. Replace the placeholder app image in `k8s/base/roof-control-hub/deployment.yaml` (or adjust `k8s/overlays/prod/kustomization.yaml`).
+3. Apply the Argo CD application manifest.
 
 ## Environment Variables
 
@@ -90,8 +115,9 @@ The script:
 | `ENABLE_SSH_TUNNEL` | `1` in `start_server.sh` | Keep a reverse tunnel for the controller UI alive via `autossh` |
 | `SSH_REMOTE_HOST` | `ronstad.se` | SSH tunnel destination host |
 | `SSH_REMOTE_USER` | `olle` | SSH tunnel destination user |
-| `SSH_REMOTE_PORT` | `9091` | Remote bind port for the reverse tunnel |
-| `SSH_LOCAL_PORT` | `9091` | Local UI port exposed through the tunnel |
+| `SSH_REMOTE_PORT` | `9091` | Legacy single-tunnel remote bind port used in `SSH_TUNNELS` default |
+| `SSH_LOCAL_PORT` | `9091` | Legacy single-tunnel local bind port used in `SSH_TUNNELS` default |
+| `SSH_TUNNELS` | `9091:9091,9092:9092` | Comma-separated `remote:local` reverse tunnel mappings (UI + Prometheus by default) |
 
 ## Controller Bridge
 

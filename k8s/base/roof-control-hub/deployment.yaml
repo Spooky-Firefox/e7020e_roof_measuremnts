@@ -1,0 +1,28 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: e7012e-roof-control-hub
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: e7012e-roof-control-hub
+  template:
+    metadata:
+      labels:
+        app: e7012e-roof-control-hub
+    spec:
+      containers:
+        - name: roof-control-hub
+          image: ghcr.io/your-org/e7012e-roof-control-hub:latest
+          imagePullPolicy: IfNotPresent
+          ports:
+            - name: metrics
+              containerPort: 9090
+            - name: ui
+              containerPort: 9091
+          env:
+            - name: ROOF_CAMERA_INDEX
+              value: "0"
+            - name: RUST_LOG
+              value: "info"

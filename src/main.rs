@@ -219,7 +219,7 @@ fn processing_frame_size(_full_size: ()) -> opencv::core::Size {
 
 fn main() -> Result<()> {
     env_logger::Builder::from_env(
-        env_logger::Env::default().default_filter_or("e7020e_roof_control_hub=debug"),
+        env_logger::Env::default().default_filter_or("e7012e_roof_control_hub=debug"),
     )
     .init();
 

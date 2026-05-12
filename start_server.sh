@@ -17,6 +17,15 @@ SSH_REMOTE_HOST="${SSH_REMOTE_HOST:-ronstad.se}"
 SSH_REMOTE_USER="${SSH_REMOTE_USER:-olle}"
 SSH_REMOTE_PORT="${SSH_REMOTE_PORT:-9091}"
 SSH_LOCAL_PORT="${SSH_LOCAL_PORT:-9091}"
+SSH_TUNNELS="${SSH_TUNNELS:-${SSH_REMOTE_PORT}:${SSH_LOCAL_PORT},9092:9092}"
+
+IFS=',' read -r -a TUNNEL_MAPPINGS <<< "$(echo "$SSH_TUNNELS" | tr -d ' ')"
+for mapping in "${TUNNEL_MAPPINGS[@]}"; do
+    if ! [[ "$mapping" =~ ^[0-9]+:[0-9]+$ ]]; then
+        echo "[$(date)] Invalid SSH_TUNNELS entry '$mapping' (expected remote:local)"
+        exit 1
+    fi
+done
 
 APP_PID=""
 MONITOR_STARTED=0
@@ -45,7 +54,11 @@ cleanup() {
         wait "$TUNNEL_PID" 2>/dev/null || true
     fi
 
-    pkill -f "autossh.*${SSH_REMOTE_PORT}:127.0.0.1:${SSH_LOCAL_PORT} ${SSH_REMOTE_USER}@${SSH_REMOTE_HOST}" 2>/dev/null || true
+    for mapping in "${TUNNEL_MAPPINGS[@]}"; do
+        remote_port="${mapping%%:*}"
+        local_port="${mapping##*:}"
+        pkill -f "autossh.*${remote_port}:127.0.0.1:${local_port} ${SSH_REMOTE_USER}@${SSH_REMOTE_HOST}" 2>/dev/null || true
+    done
 }
 
 trap cleanup EXIT SIGINT SIGTERM
@@ -124,26 +137,30 @@ if [ "$ENABLE_SSH_TUNNEL" = "1" ]; then
         done
         echo "[$(date)] Network route ready"
 
-        echo "[$(date)] Setting up autossh tunnel to ${SSH_REMOTE_HOST}:${SSH_REMOTE_PORT} -> localhost:${SSH_LOCAL_PORT}..."
+        echo "[$(date)] Setting up autossh tunnels to ${SSH_REMOTE_HOST} (${SSH_TUNNELS})..."
         while true; do
             if ping -c 1 -w 5 "$SSH_REMOTE_HOST" >/dev/null 2>&1; then
-                if ! pgrep -af "autossh.*${SSH_REMOTE_PORT}:127.0.0.1:${SSH_LOCAL_PORT} ${SSH_REMOTE_USER}@${SSH_REMOTE_HOST}" >/dev/null 2>&1; then
-                    echo "[$(date)] Starting autossh tunnel (will retry in 20s if needed)"
-                    sleep 20
+                for mapping in "${TUNNEL_MAPPINGS[@]}"; do
+                    remote_port="${mapping%%:*}"
+                    local_port="${mapping##*:}"
+                    if pgrep -af "autossh.*${remote_port}:127.0.0.1:${local_port} ${SSH_REMOTE_USER}@${SSH_REMOTE_HOST}" >/dev/null 2>&1; then
+                        continue
+                    fi
 
                     until ssh -o BatchMode=yes -o ConnectTimeout=5 "${SSH_REMOTE_USER}@${SSH_REMOTE_HOST}" "exit" 2>/dev/null; do
                         echo "[$(date)] Waiting for SSH connectivity to ${SSH_REMOTE_HOST}"
                         sleep 5
                     done
 
+                    echo "[$(date)] Starting autossh tunnel ${SSH_REMOTE_HOST}:${remote_port} -> localhost:${local_port}"
                     autossh -M 0 -fN \
                         -o ServerAliveInterval=30 \
                         -o ServerAliveCountMax=3 \
                         -o ExitOnForwardFailure=yes \
-                        -R "127.0.0.1:${SSH_REMOTE_PORT}:127.0.0.1:${SSH_LOCAL_PORT}" "${SSH_REMOTE_USER}@${SSH_REMOTE_HOST}" >> "$TUNNEL_LOG" 2>&1
+                        -R "127.0.0.1:${remote_port}:127.0.0.1:${local_port}" "${SSH_REMOTE_USER}@${SSH_REMOTE_HOST}" >> "$TUNNEL_LOG" 2>&1
 
-                    echo "[$(date)] Autossh tunnel established"
-                fi
+                    echo "[$(date)] Autossh tunnel established on remote port ${remote_port}"
+                done
             else
                 echo "[$(date)] Cannot reach ${SSH_REMOTE_HOST}, will retry"
             fi
@@ -152,6 +169,7 @@ if [ "$ENABLE_SSH_TUNNEL" = "1" ]; then
         done &
         TUNNEL_PID=$!
         echo "[$(date)] Tunnel monitor started (PID: $TUNNEL_PID)"
+        echo "[$(date)] Active tunnel mappings: ${SSH_TUNNELS}"
     fi
 fi
 

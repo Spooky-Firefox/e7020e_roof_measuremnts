@@ -1,4 +1,4 @@
-# Prometheus + Grafana monitoring stack for e7020e_roof_measuremnts.
+# Prometheus + Grafana monitoring stack for e7012e_roof_measuremnts.
 #
 # Usage (from this directory):
 #   docker compose up -d

@@ -1,0 +1,14 @@
+apiVersion: v1
+kind: Service
+metadata:
+  name: e7012e-roof-control-hub
+spec:
+  selector:
+    app: e7012e-roof-control-hub
+  ports:
+    - name: metrics
+      port: 9090
+      targetPort: metrics
+    - name: ui
+      port: 9091
+      targetPort: ui
