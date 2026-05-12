@@ -24,8 +24,7 @@ spec:
               containerPort: 9090
           volumeMounts:
             - name: config
-              mountPath: /etc/prometheus/prometheus.yml
-              subPath: prometheus.yml
+              mountPath: /etc/prometheus
             - name: data
               mountPath: /prometheus
       volumes:
