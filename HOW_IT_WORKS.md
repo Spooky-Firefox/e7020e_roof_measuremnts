@@ -4,13 +4,14 @@
 
 This program estimates how far the camera is rotated relative to an office-roof grid and now also hosts the RP2350 controller bridge used during roof-alignment bring-up. It is designed as a headless-first sensor service for the Rock Pi 4, with optional debug display during tuning. The output is a signed angle relative to the roof's vertical grid lines, plus confidence and spread metrics, and the same process also exposes controller telemetry, logs, and a browser UI.
 
-The camera pipeline is split across bounded channels so capture, enhancement, line detection, classification, alignment estimation, and metrics can overlap without building unbounded queues. The controller service runs in a separate thread beside that pipeline and feeds Prometheus through the same metrics path.
+The camera pipeline now has two phases. At startup, a green-circle detector runs by itself and waits for a strong enough trigger to send `mode auto` once. After that one-way handoff, the existing roof-alignment pipeline runs normally until the operator resets the startup gate. Bounded channels are still used so capture, startup gating, enhancement, line detection, classification, alignment estimation, and metrics can overlap without building unbounded queues. The controller service runs in a separate thread beside that pipeline and feeds Prometheus through the same metrics path.
 
 ## Pipeline
 
 ```mermaid
 flowchart TB
     cap["capture.rs\nVideoCapture"]
+    start["startup.rs\nHSV green mask + HoughCircles + EMA"]
     enh["enhance.rs\nLab + RGB edge extraction"]
     det["detect.rs\nHoughLinesP"]
     cls["classify.rs\nvertical / horizontal / outlier"]
@@ -19,8 +20,9 @@ flowchart TB
     ctl["controller_service.rs\nUI + API + serial bridge :9091"]
     met["metrics.rs\nPrometheus :9090"]
 
-    cap --> enh --> det --> cls --> dec --> dsp
+    cap --> start --> enh --> det --> cls --> dec --> dsp
     cap ---> met
+    start ---> met
     enh ---> met
     det ---> met
     cls ---> met
@@ -28,7 +30,7 @@ flowchart TB
     ctl ---> met
 ```
 
-Main channels are `bounded(2)`, which means slow downstream work naturally backpressures the pipeline instead of allowing stale frames to pile up.
+Main channels are `bounded(2)`, which means slow downstream work naturally backpressures the pipeline instead of allowing stale frames to pile up. Before handoff, the startup gate consumes frames itself and does not forward them into the roof-alignment stages.
 
 ## Runtime Surfaces
 
@@ -59,7 +61,23 @@ The enhancement stage now keeps more information by using multiple edge sources 
 
 `src/capture.rs` opens the USB camera, reads frames continuously, and forwards each frame downstream. The camera index defaults to `DEFAULT_CAMERA_INDEX` and can be overridden with `ROOF_CAMERA_INDEX`.
 
-## Stage 2: Enhancement
+## Stage 2: Startup Gate
+
+`src/startup.rs` runs before any roof-grid processing starts.
+
+While the process is in `search_green` mode, it does only this work:
+
+1. Convert the raw BGR frame to HSV.
+2. Apply a green `in_range` mask.
+3. Blur the mask and run `HoughCircles`.
+4. Score the best candidate by how much of the circle area is actually green.
+5. Smooth that score with an EMA.
+
+If the EMA crosses the startup threshold, the stage sends `mode auto` through the same controller command path the browser UI uses. That keeps the host-side controller snapshot, browser telemetry, and the serial output in sync. After that succeeds, the process latches into `roof_alignment` mode and forwards subsequent frames into the normal line-based pipeline.
+
+If the operator presses the startup reset button in the UI, the stage returns to `search_green` and clears the previous EMA and circle state.
+
+## Stage 3: Enhancement
 
 `src/enhance.rs` builds a line-friendly edge map in one fast pass:
 
@@ -71,7 +89,7 @@ The enhancement stage now keeps more information by using multiple edge sources 
 
 This is intentionally cheaper than the earlier multi-channel path. Detection now runs a single Hough pass over that prebuilt edge map at a more aggressive downscale, with stricter thresholds to reduce noisy line fragments while still forwarding all candidates that survive Hough.
 
-## Stage 3: Detection
+## Stage 4: Detection
 
 `src/detect.rs` runs a single `HoughLinesP` pass over the prepared edge image. The detector works on the downscaled image, so the effective threshold, minimum line length, and gap settings are scaled with the processing resolution instead of using the raw camera-space numbers directly.
 
@@ -84,7 +102,7 @@ Each candidate line is converted into a `RawLine` with:
 
 That keeps the next stage focused on geometry instead of OpenCV-specific line storage.
 
-## Stage 4: Classification
+## Stage 5: Classification
 
 `src/classify.rs` compares each detected line against the expected roof axes:
 
@@ -107,7 +125,7 @@ For the vertical and horizontal groups, the stage computes:
 
 Those numbers are used both for telemetry and for deciding whether the frame contains a reliable grid estimate.
 
-## Stage 5: Alignment Estimate
+## Stage 6: Alignment Estimate
 
 `src/classify.rs` builds the `AlignmentReport`, and `src/decide.rs` logs it, exports metrics, and forwards serial output.
 
@@ -158,6 +176,7 @@ The UI adds:
 - constants tuning controls with preset dropdown names and free-text entry
 - constants file upload that expands into batched `const <name> <value>` commands
 - manual and auto mode buttons with `both`, `steering`, and `throttle` targets
+- startup-gate status and reset controls
 - live telemetry polling
 - controller log download links
 
@@ -208,7 +227,10 @@ The default build is headless. For local tuning, build without the default `no-d
 cargo run --no-default-features
 ```
 
-The display shows the raw frame, enhanced luminance view, combined edge image, and annotated line overlay.
+The display shows different content depending on phase:
+
+- `search_green`: raw frame, green mask, and annotated startup-circle overlay
+- `roof_alignment`: raw frame, enhanced luminance view, combined edge image, and annotated line overlay
 
 ## Tuning Notes
 

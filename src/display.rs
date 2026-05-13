@@ -1,10 +1,10 @@
 use anyhow::Result;
 use crossbeam_channel::Receiver;
 
-use crate::types::AlignmentMsg;
+use crate::types::{AlignmentMsg, DisplayMsg, StartupDisplayMsg};
 
 #[cfg(not(feature = "no-display"))]
-use crate::{consts, types::AxisClass};
+use crate::{consts, types::{AxisClass, StartupPhase}};
 
 #[cfg(not(feature = "no-display"))]
 #[cfg(has_opencv_algorithm_hint)]
@@ -47,7 +47,7 @@ impl DisplayStage {
         }
     }
 
-    pub fn render(&mut self, msg: AlignmentMsg) -> Result<()> {
+    fn render_alignment(&mut self, msg: AlignmentMsg) -> Result<()> {
         #[cfg(has_opencv_algorithm_hint)]
         imgproc::cvt_color(
             &msg.gray_contrast,
@@ -154,16 +154,129 @@ impl DisplayStage {
         highgui::imshow("roof-alignment", &self.canvas)?;
         Ok(())
     }
+
+    fn render_startup(&mut self, msg: StartupDisplayMsg) -> Result<()> {
+        #[cfg(has_opencv_algorithm_hint)]
+        imgproc::cvt_color(
+            &msg.mask,
+            &mut self.gray_bgr,
+            imgproc::COLOR_GRAY2BGR,
+            0,
+            AlgorithmHint::ALGO_HINT_DEFAULT,
+        )?;
+        #[cfg(not(has_opencv_algorithm_hint))]
+        imgproc::cvt_color(&msg.mask, &mut self.gray_bgr, imgproc::COLOR_GRAY2BGR, 0)?;
+
+        msg.frame.copy_to(&mut self.annotated)?;
+        if let Some(circle) = &msg.status.best_circle {
+            imgproc::circle(
+                &mut self.annotated,
+                core::Point::new(circle.center_x, circle.center_y),
+                circle.radius,
+                core::Scalar::new(0.0, 255.0, 0.0, 0.0),
+                3,
+                imgproc::LINE_AA,
+                0,
+            )?;
+        }
+
+        let phase = match msg.status.phase {
+            StartupPhase::SearchGreen => "search_green",
+            StartupPhase::RoofAlignment => "roof_alignment",
+        };
+        let overlay = format!(
+            "startup phase={} detected={} green={:.2} ema={:.2} handoffs={}",
+            phase,
+            msg.status.green_detected,
+            msg.status.green_fraction,
+            msg.status.green_ema,
+            msg.status.handoff_count,
+        );
+        imgproc::put_text(
+            &mut self.annotated,
+            &overlay,
+            core::Point::new(20, 30),
+            imgproc::FONT_HERSHEY_SIMPLEX,
+            consts::OVERLAY_TEXT_SCALE,
+            core::Scalar::new(255.0, 255.0, 255.0, 0.0),
+            consts::OVERLAY_TEXT_THICKNESS,
+            imgproc::LINE_AA,
+            false,
+        )?;
+
+        let detail = if let Some(circle) = &msg.status.best_circle {
+            format!(
+                "circle=({}, {}) r={} fill={:.2}",
+                circle.center_x, circle.center_y, circle.radius, circle.green_fraction,
+            )
+        } else {
+            "circle=none".to_string()
+        };
+        imgproc::put_text(
+            &mut self.annotated,
+            &detail,
+            core::Point::new(20, 60),
+            imgproc::FONT_HERSHEY_SIMPLEX,
+            0.55,
+            core::Scalar::new(180.0, 255.0, 255.0, 0.0),
+            1,
+            imgproc::LINE_AA,
+            false,
+        )?;
+
+        if let Some(error) = msg.status.last_error.as_deref() {
+            imgproc::put_text(
+                &mut self.annotated,
+                error,
+                core::Point::new(20, 90),
+                imgproc::FONT_HERSHEY_SIMPLEX,
+                0.5,
+                core::Scalar::new(0.0, 128.0, 255.0, 0.0),
+                1,
+                imgproc::LINE_AA,
+                false,
+            )?;
+        }
+
+        let w = self.frame_size.width;
+        let h = self.frame_size.height;
+        msg.frame.copy_to(&mut Mat::roi_mut(
+            &mut self.canvas,
+            core::Rect::new(0, 0, w, h),
+        )?)?;
+        self.gray_bgr.copy_to(&mut Mat::roi_mut(
+            &mut self.canvas,
+            core::Rect::new(w, 0, w, h),
+        )?)?;
+        self.annotated.copy_to(&mut Mat::roi_mut(
+            &mut self.canvas,
+            core::Rect::new(0, h, w, h),
+        )?)?;
+        self.annotated.copy_to(&mut Mat::roi_mut(
+            &mut self.canvas,
+            core::Rect::new(w, h, w, h),
+        )?)?;
+
+        highgui::imshow("roof-alignment", &self.canvas)?;
+        Ok(())
+    }
+
+    pub fn render(&mut self, msg: DisplayMsg) -> Result<()> {
+        match msg {
+            DisplayMsg::Startup(msg) => self.render_startup(msg),
+            DisplayMsg::Alignment(msg) => self.render_alignment(msg),
+        }
+    }
 }
 
 #[cfg(feature = "no-display")]
-pub fn run_display(rx: Receiver<AlignmentMsg>, _frame_size: opencv::core::Size) -> Result<()> {
+pub fn run_display(rx: Receiver<DisplayMsg>, _frame_size: opencv::core::Size) -> Result<()> {
     for _ in rx {}
     Ok(())
 }
 
 #[cfg(not(feature = "no-display"))]
-pub fn run_display(rx: Receiver<AlignmentMsg>, frame_size: opencv::core::Size) -> Result<()> {
+pub fn run_display(rx: Receiver<DisplayMsg>, frame_size: opencv::core::Size) -> Result<()> {
     let mut stage = DisplayStage::new(frame_size)?;
     loop {
         let msg = match rx.recv() {

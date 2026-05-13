@@ -30,6 +30,23 @@ pub const HOUGH_THETA_DEG: f64 = 1.0;
 pub const CLASS_ANGLE_MARGIN_DEG: f32 = 30.0;
 pub const MIN_CLASSIFIED_LINES: usize = 2;
 
+pub const STARTUP_GREEN_H_MIN: f64 = 35.0;
+pub const STARTUP_GREEN_S_MIN: f64 = 50.0;
+pub const STARTUP_GREEN_V_MIN: f64 = 30.0;
+pub const STARTUP_GREEN_H_MAX: f64 = 90.0;
+pub const STARTUP_GREEN_S_MAX: f64 = 255.0;
+pub const STARTUP_GREEN_V_MAX: f64 = 255.0;
+pub const STARTUP_MASK_BLUR_KSIZE: i32 = 17;
+pub const STARTUP_HOUGH_DP: f64 = 1.0;
+pub const STARTUP_HOUGH_MIN_DIST: f64 = 160.0;
+pub const STARTUP_HOUGH_PARAM1: f64 = 80.0;
+pub const STARTUP_HOUGH_PARAM2: f64 = 18.0;
+pub const STARTUP_HOUGH_MIN_RADIUS: i32 = 20;
+pub const STARTUP_HOUGH_MAX_RADIUS: i32 = 220;
+pub const STARTUP_MIN_GREEN_FRACTION: f32 = 0.55;
+pub const STARTUP_DECIDE_EMA_ALPHA: f32 = 0.15;
+pub const STARTUP_DECIDE_AUTO_THRESHOLD: f32 = 0.65;
+
 pub const SERIAL_BAUD_RATE: u32 = 115_200;
 
 pub const METRICS_HTTP_BIND: &str = "0.0.0.0:9090";

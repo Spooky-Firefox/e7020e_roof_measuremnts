@@ -4,6 +4,7 @@ Vision pipeline and controller bridge for roof-alignment bring-up on the Rock Pi
 
 This process does two jobs at once:
 
+- waits for a green start circle, then switches the controller to auto once
 - estimates roof-grid alignment from a live USB camera feed
 - exposes metrics, logs, and a browser UI for the RP2350 controller
 
@@ -31,6 +32,7 @@ The default Grafana dashboard places vehicle/controller panels at the top so con
 
 - `src/main.rs`: thread setup, camera init, channel wiring, and process bootstrap
 - `src/capture.rs`: USB camera acquisition
+- `src/startup.rs`: green-circle startup gate and one-way handoff into roof alignment
 - `src/enhance.rs`: Lab-based preprocessing, edges, and dilation
 - `src/detect.rs`: Hough-based line detection
 - `src/classify.rs`: vertical/horizontal/outlier grouping and statistics
@@ -58,13 +60,15 @@ cargo run
 
 The default feature set includes `no-display`, which keeps the process suitable for remote operation on the Rock Pi.
 
+At startup, the camera feed stays in a green-circle detection mode. The roof-alignment pipeline does not run until a green circle is confirmed strongly enough to send `mode auto` to the controller. After that handoff, the app latches into normal roof-alignment mode until you reset the startup gate from the UI.
+
 ### Local debug display
 
 ```sh
 cargo run --no-default-features
 ```
 
-This opens the OpenCV overlay window so you can inspect the raw frame, processed edge map, and selected line geometry.
+This opens the OpenCV overlay window so you can inspect either the startup green-circle gate or, after handoff, the processed roof-alignment line geometry.
 
 ### Full bring-up script
 
@@ -127,9 +131,11 @@ The controller service is built into the Rust process and replaces the older sta
 | `POST` | `/api/connect` | Open the RP2350 serial port and start host-side CSV logging |
 | `POST` | `/api/disconnect` | Close the serial link |
 | `GET` | `/api/telemetry` | Return the latest parsed controller snapshot |
+| `GET` | `/api/startup` | Return the current startup-gate phase and green-circle status |
 | `POST` | `/api/command` | Send a raw command string or a batch of command strings to the RP2350 |
 | `POST` | `/api/settings` | Update UI-side steering and throttle sensitivity |
 | `POST` | `/api/mode` | Send `mode manual` or `mode auto` |
+| `POST` | `/api/startup/reset` | Re-arm the startup gate so green-circle detection runs again |
 | `GET` | `/api/logs` | List captured controller CSV logs |
 
 ### RP2350 commands forwarded by the UI
@@ -154,6 +160,13 @@ The browser UI includes a constants tuning panel with:
 - file upload support that sends a batch of const commands in one request
 
 Accepted file line formats are `const <name> <value>` and `<name> <value>`.
+
+The browser UI also shows the startup-gate state:
+
+- current phase (`search_green` or `roof_alignment`)
+- current green fill score and EMA
+- best detected circle, if any
+- a reset button to re-arm the gate without restarting the process
 
 Accepted runtime constant names are `speed`, `setpoint`, `speed_setpoint`, `speed_kp`, `speed_ki`, `speed_kd`, `steering_kp`, `steering_ki`, `steering_kd`, `observer_q`, `observer_r`, and `observer_p0`.
 

@@ -18,13 +18,38 @@ use tiny_http::{Header, Method, Request, Response, StatusCode};
 
 use crate::{
     consts,
+    controller_commands,
     shared_serial::SharedSerialPort,
+    startup::SharedStartupState,
     types::{ControllerMetrics, ControllerMode, ControllerTelemetrySnapshot, MetricsMsg},
 };
 
 const INDEX_HTML: &str = include_str!("controller_ui.html");
 
 type SharedState = Arc<Mutex<ControllerState>>;
+
+#[derive(Clone)]
+pub struct ControllerHandle {
+    state: SharedState,
+}
+
+impl ControllerHandle {
+    pub fn new(shared_port: SharedSerialPort) -> Self {
+        Self {
+            state: Arc::new(Mutex::new(ControllerState::new(shared_port))),
+        }
+    }
+}
+
+impl ModeTarget {
+    fn keyword(self) -> &'static str {
+        match self {
+            ModeTarget::Steering => controller_commands::MODE_TARGET_STEERING,
+            ModeTarget::Throttle => controller_commands::MODE_TARGET_THROTTLE,
+            ModeTarget::Both => controller_commands::MODE_TARGET_BOTH,
+        }
+    }
+}
 
 struct ControllerState {
     log_writer: Option<BufWriter<File>>,
@@ -113,11 +138,12 @@ enum TelemetryParseResult {
 
 pub fn run_controller_service(
     tx_metrics: Sender<MetricsMsg>,
-    shared_port: SharedSerialPort,
+    controller: ControllerHandle,
+    startup_state: SharedStartupState,
 ) -> Result<()> {
     fs::create_dir_all(controller_log_dir())?;
 
-    let state = Arc::new(Mutex::new(ControllerState::new(shared_port)));
+    let state = controller.state.clone();
     publish_metrics(&tx_metrics, &ControllerTelemetrySnapshot::default());
 
     let server = tiny_http::Server::http(consts::CONTROLLER_HTTP_BIND)
@@ -128,7 +154,7 @@ pub fn run_controller_service(
     );
 
     for request in server.incoming_requests() {
-        if let Err(error) = handle_request(request, &state, &tx_metrics) {
+        if let Err(error) = handle_request(request, &state, &startup_state, &tx_metrics) {
             error!("[controller] request handling failed: {error:#}");
         }
     }
@@ -139,6 +165,7 @@ pub fn run_controller_service(
 fn handle_request(
     request: Request,
     state: &SharedState,
+    startup_state: &SharedStartupState,
     tx_metrics: &Sender<MetricsMsg>,
 ) -> Result<()> {
     let path = request.url().split('?').next().unwrap_or("/").to_string();
@@ -146,13 +173,15 @@ fn handle_request(
     match (request.method(), path.as_str()) {
         (&Method::Get, "/") => respond_html(request, INDEX_HTML),
         (&Method::Get, "/api/ports") => handle_list_ports(request),
-        (&Method::Get, "/api/telemetry") => handle_telemetry(request, state),
+        (&Method::Get, "/api/telemetry") => handle_telemetry(request, state, startup_state),
         (&Method::Get, "/api/logs") => handle_logs(request),
+        (&Method::Get, "/api/startup") => handle_startup_status(request, startup_state),
         (&Method::Post, "/api/connect") => handle_connect(request, state, tx_metrics),
         (&Method::Post, "/api/disconnect") => handle_disconnect(request, state, tx_metrics),
         (&Method::Post, "/api/command") => handle_command(request, state, tx_metrics),
         (&Method::Post, "/api/settings") => handle_settings(request, state, tx_metrics),
         (&Method::Post, "/api/mode") => handle_mode(request, state, tx_metrics),
+        (&Method::Post, "/api/startup/reset") => handle_startup_reset(request, startup_state),
         (&Method::Get, _) if path.starts_with("/api/logs/") => handle_download_log(request, &path),
         _ => respond_json(
             request,
@@ -177,9 +206,37 @@ fn handle_list_ports(request: Request) -> Result<()> {
     respond_json(request, StatusCode(200), &serde_json::to_string(&ports)?)
 }
 
-fn handle_telemetry(request: Request, state: &SharedState) -> Result<()> {
+#[derive(serde::Serialize)]
+struct TelemetryResponse {
+    #[serde(flatten)]
+    snapshot: ControllerTelemetrySnapshot,
+    startup: crate::types::StartupStatus,
+}
+
+fn handle_telemetry(
+    request: Request,
+    state: &SharedState,
+    startup_state: &SharedStartupState,
+) -> Result<()> {
     let snapshot = { lock_state(state)?.snapshot.clone() };
-    respond_json(request, StatusCode(200), &serde_json::to_string(&snapshot)?)
+    let response = TelemetryResponse {
+        snapshot,
+        startup: crate::startup::snapshot(startup_state),
+    };
+    respond_json(request, StatusCode(200), &serde_json::to_string(&response)?)
+}
+
+fn handle_startup_status(request: Request, startup_state: &SharedStartupState) -> Result<()> {
+    respond_json(
+        request,
+        StatusCode(200),
+        &serde_json::to_string(&crate::startup::snapshot(startup_state))?,
+    )
+}
+
+fn handle_startup_reset(request: Request, startup_state: &SharedStartupState) -> Result<()> {
+    crate::startup::reset(startup_state);
+    respond_json(request, StatusCode(200), &json!({"ok": true}).to_string())
 }
 
 fn handle_logs(request: Request) -> Result<()> {
@@ -346,7 +403,7 @@ fn parse_command_request(payload: &CommandRequest) -> Result<Vec<String>> {
 }
 
 fn validate_command(command: &str) -> Result<()> {
-    if command.starts_with("const ") {
+    if command.starts_with(controller_commands::CONST_PREFIX) {
         let mut parts = command.split_whitespace();
         let _ = parts.next();
         let Some(name) = parts.next() else {
@@ -359,7 +416,9 @@ fn validate_command(command: &str) -> Result<()> {
         if name.is_empty() {
             anyhow::bail!("const name cannot be empty");
         }
-    } else if command.starts_with("mode ") && parse_mode_command(command).is_none() {
+    } else if command.starts_with(controller_commands::MODE_PREFIX)
+        && parse_mode_command(command).is_none()
+    {
         anyhow::bail!(
             "mode command must be: mode <manual|auto> or mode <steering|throttle|both> <manual|auto>"
         );
@@ -409,15 +468,10 @@ fn handle_mode(
     tx_metrics: &Sender<MetricsMsg>,
 ) -> Result<()> {
     let payload: ModeRequest = read_json_body(&mut request)?;
-    let mode = match payload.mode {
-        ControllerMode::Manual => "manual",
-        ControllerMode::Auto => "auto",
-    };
-    let command = match payload.target {
-        ModeTarget::Both => format!("mode {mode}"),
-        ModeTarget::Steering => format!("mode steering {mode}"),
-        ModeTarget::Throttle => format!("mode throttle {mode}"),
-    };
+    let command = controller_commands::format_mode_command(
+        Some(payload.target.keyword()),
+        payload.mode,
+    );
 
     match send_serial_command(state, &command) {
         Ok(snapshot) => {
@@ -430,6 +484,18 @@ fn handle_mode(
             &json!({"error": error.to_string()}).to_string(),
         ),
     }
+}
+
+pub fn send_mode(
+    controller: &ControllerHandle,
+    mode: ControllerMode,
+    tx_metrics: &Sender<MetricsMsg>,
+) -> Result<ControllerTelemetrySnapshot> {
+    let command = controller_commands::format_mode_command(None, mode);
+
+    let snapshot = send_serial_command(&controller.state, &command)?;
+    publish_metrics(tx_metrics, &snapshot);
+    Ok(snapshot)
 }
 
 fn handle_download_log(request: Request, path: &str) -> Result<()> {
@@ -483,11 +549,11 @@ fn send_serial_command(state: &SharedState, command: &str) -> Result<ControllerT
 }
 
 fn apply_command_snapshot(snapshot: &mut ControllerTelemetrySnapshot, command: &str) {
-    if let Some(value) = command.strip_prefix("pwm-a ") {
+    if let Some(value) = controller_commands::strip_value(command, controller_commands::PWM_STEERING_PREFIX) {
         if let Ok(steer_us) = value.trim().parse::<i32>() {
             snapshot.steer_us = steer_us;
         }
-    } else if let Some(value) = command.strip_prefix("pwm-b ") {
+    } else if let Some(value) = controller_commands::strip_value(command, controller_commands::PWM_THROTTLE_PREFIX) {
         if let Ok(throttle_us) = value.trim().parse::<i32>() {
             snapshot.throttle_us = throttle_us;
         }
@@ -497,7 +563,7 @@ fn apply_command_snapshot(snapshot: &mut ControllerTelemetrySnapshot, command: &
 }
 
 fn parse_mode_command(command: &str) -> Option<ControllerMode> {
-    let rest = command.strip_prefix("mode ")?.trim();
+    let rest = controller_commands::strip_value(command, controller_commands::MODE_PREFIX)?;
     let mut parts = rest.split_ascii_whitespace();
     let first = parts.next()?;
     let second = parts.next();
@@ -508,21 +574,27 @@ fn parse_mode_command(command: &str) -> Option<ControllerMode> {
 
     let mode = second.unwrap_or(first);
     match mode {
-        "manual" => Some(ControllerMode::Manual),
-        "auto" => Some(ControllerMode::Auto),
+        controller_commands::MODE_MANUAL => Some(ControllerMode::Manual),
+        controller_commands::MODE_AUTO => Some(ControllerMode::Auto),
         _ => None,
     }
 }
 
 fn command_allowed(snapshot: &ControllerTelemetrySnapshot, command: &str) -> bool {
-    if snapshot.mode == ControllerMode::Manual || command.starts_with("mode ") {
+    if snapshot.mode == ControllerMode::Manual
+        || command.starts_with(controller_commands::MODE_PREFIX)
+    {
         return true;
     }
 
-    if let Some(value) = command.strip_prefix("pwm-a ") {
+    if let Some(value) =
+        controller_commands::strip_value(command, controller_commands::PWM_STEERING_PREFIX)
+    {
         return value.trim() == "1500";
     }
-    if let Some(value) = command.strip_prefix("pwm-b ") {
+    if let Some(value) =
+        controller_commands::strip_value(command, controller_commands::PWM_THROTTLE_PREFIX)
+    {
         return value.trim() == "1500";
     }
 
@@ -938,12 +1010,7 @@ fn apply_log_row_to_snapshot(
 }
 
 fn is_command_echo(line: &str) -> bool {
-    let line = line.trim();
-    line.starts_with("pwm-a ")
-        || line.starts_with("pwm-b ")
-        || line.starts_with("speed ")
-        || line.starts_with("const ")
-        || line.starts_with("mode ")
+    controller_commands::is_known_command_echo(line)
 }
 
 fn parse_csv_f32(value: &str) -> Option<f32> {

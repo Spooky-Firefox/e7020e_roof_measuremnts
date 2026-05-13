@@ -1,6 +1,7 @@
 mod capture;
 mod classify;
 mod consts;
+mod controller_commands;
 mod controller_service;
 mod decide;
 mod detect;
@@ -9,6 +10,7 @@ mod enhance;
 mod metrics;
 mod serial;
 mod shared_serial;
+mod startup;
 mod types;
 
 use anyhow::Result;
@@ -29,7 +31,7 @@ use opencv::{prelude::*, videoio};
 use opencv::highgui;
 
 use opencv::prelude::Mat;
-use types::{AlignmentMsg, ClassifiedMsg, DetectMsg, EnhanceMsg, MetricsMsg};
+use types::{AlignmentMsg, ClassifiedMsg, DetectMsg, DisplayMsg, EnhanceMsg, MetricsMsg};
 
 #[cfg(feature = "camera-support")]
 use types::CameraMetrics;
@@ -247,11 +249,13 @@ fn main() -> Result<()> {
         (frame_size, None)
     };
 
+    let (tx_raw, rx_raw) = bounded::<Mat>(2);
     let (tx_cap, rx_cap) = bounded::<Mat>(2);
     let (tx_enh, rx_enh) = bounded::<EnhanceMsg>(2);
     let (tx_det, rx_det) = bounded::<DetectMsg>(2);
     let (tx_cls, rx_cls) = bounded::<ClassifiedMsg>(2);
     let (tx_align, rx_align) = bounded::<AlignmentMsg>(2);
+    let (tx_display, rx_display) = bounded::<DisplayMsg>(2);
     let (tx_metrics, rx_metrics) = bounded::<MetricsMsg>(128);
 
     if let Some(cam_metrics) = camera_metrics {
@@ -273,16 +277,24 @@ fn main() -> Result<()> {
     let tx_m4 = tx_metrics.clone();
     let tx_m5 = tx_metrics;
     let tx_controller = tx_m5.clone();
+    let tx_startup = tx_m5.clone();
+    let tx_display_startup = tx_display.clone();
+    let tx_display_align = tx_display.clone();
 
     // Create shared serial port for both controller and alignment services
     let shared_port = shared_serial::SharedSerialPort::new();
 
     let shared_port_align = shared_port.clone();
-    let shared_port_controller = shared_port.clone();
+    let controller_handle = controller_service::ControllerHandle::new(shared_port.clone());
+    let controller_handle_startup = controller_handle.clone();
+    let controller_handle_service = controller_handle.clone();
+    let startup_state = startup::new_shared_state();
+    let startup_state_service = startup_state.clone();
+    let startup_state_gate = startup_state.clone();
 
     #[cfg(feature = "camera-support")]
     let t1 = {
-        let tx_cap = tx_cap;
+        let tx_cap = tx_raw;
         let tx_m1 = tx_m1;
         thread::spawn(move || {
             let cam = open_camera().expect("failed to open camera");
@@ -292,23 +304,53 @@ fn main() -> Result<()> {
 
     #[cfg(not(feature = "camera-support"))]
     let t1 = {
-        let tx_cap = tx_cap;
+        let tx_cap = tx_raw;
         let tx_m1 = tx_m1;
         thread::spawn(move || capture::run_capture(tx_cap, tx_m1))
     };
 
+    let t_gate = thread::spawn(move || {
+        startup::run_startup_gate(
+            rx_raw,
+            tx_cap,
+            tx_display_startup,
+            tx_startup,
+            startup_state_gate,
+            controller_handle_startup,
+        )
+    });
     let t2 = thread::spawn(move || enhance::run_enhance(rx_cap, tx_enh, tx_m2));
     let t3 = thread::spawn(move || detect::run_detect(rx_enh, tx_det, tx_m3));
     let t4 = thread::spawn(move || classify::run_classify(rx_det, tx_cls, tx_m4));
     let t5 = thread::spawn(move || decide::run_decide(rx_cls, tx_align, tx_m5, shared_port_align));
+    let t_display_mux = thread::spawn(move || -> Result<()> {
+        for msg in rx_align {
+            if tx_display_align.send(DisplayMsg::Alignment(msg)).is_err() {
+                break;
+            }
+        }
+        Ok(())
+    });
     let t6 = thread::spawn(move || metrics::run_metrics(rx_metrics));
     let t7 = thread::spawn(move || {
-        controller_service::run_controller_service(tx_controller, shared_port_controller)
+        controller_service::run_controller_service(
+            tx_controller,
+            controller_handle_service,
+            startup_state_service,
+        )
     });
 
-    display::run_display(rx_align, frame_size)?;
+    display::run_display(rx_display, frame_size)?;
 
-    for res in [t1.join(), t2.join(), t3.join(), t4.join(), t5.join()] {
+    for res in [
+        t1.join(),
+        t_gate.join(),
+        t2.join(),
+        t3.join(),
+        t4.join(),
+        t5.join(),
+        t_display_mux.join(),
+    ] {
         if let Ok(Err(error)) = res {
             eprintln!("Pipeline thread error: {error}");
         }

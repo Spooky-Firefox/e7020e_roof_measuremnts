@@ -109,6 +109,47 @@ pub enum ControllerMode {
     Auto,
 }
 
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Deserialize, Serialize, Default)]
+#[serde(rename_all = "snake_case")]
+pub enum StartupPhase {
+    #[default]
+    SearchGreen,
+    RoofAlignment,
+}
+
+#[derive(Clone, Debug, Default, Deserialize, Serialize)]
+pub struct StartupCircle {
+    pub center_x: i32,
+    pub center_y: i32,
+    pub radius: i32,
+    pub green_fraction: f32,
+}
+
+#[derive(Clone, Debug, Deserialize, Serialize)]
+pub struct StartupStatus {
+    pub phase: StartupPhase,
+    pub green_detected: bool,
+    pub green_fraction: f32,
+    pub green_ema: f32,
+    pub best_circle: Option<StartupCircle>,
+    pub handoff_count: u64,
+    pub last_error: Option<String>,
+}
+
+impl Default for StartupStatus {
+    fn default() -> Self {
+        Self {
+            phase: StartupPhase::SearchGreen,
+            green_detected: false,
+            green_fraction: 0.0,
+            green_ema: 0.0,
+            best_circle: None,
+            handoff_count: 0,
+            last_error: None,
+        }
+    }
+}
+
 #[derive(Clone, Debug, Serialize)]
 pub struct ControllerTelemetrySnapshot {
     pub timestamp_us: u64,
@@ -269,4 +310,17 @@ pub struct AlignmentMsg {
     pub report: AlignmentReport,
     #[cfg_attr(feature = "no-display", allow(dead_code))]
     pub serial_frame: String,
+}
+
+pub struct StartupDisplayMsg {
+    #[cfg_attr(feature = "no-display", allow(dead_code))]
+    pub frame: Mat,
+    #[cfg_attr(feature = "no-display", allow(dead_code))]
+    pub mask: Mat,
+    pub status: StartupStatus,
+}
+
+pub enum DisplayMsg {
+    Startup(StartupDisplayMsg),
+    Alignment(AlignmentMsg),
 }

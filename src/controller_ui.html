@@ -352,6 +352,34 @@
         </div>
       </section>
       <section class="panel">
+        <div class="section-title">Arbitrary Command</div>
+        <div class="field-row">
+          <label for="raw-command">Raw controller command</label>
+          <input id="raw-command" type="text" placeholder="speed 0.35" onkeydown="handleRawCommandKey(event)" />
+        </div>
+        <div class="btn-row">
+          <button class="btn-secondary" onclick="sendRawCommand()">Send Raw Command</button>
+        </div>
+        <div class="hint" style="margin-top:10px;">Use this for controller commands that do not have a dedicated UI control.</div>
+      </section>
+      <section class="panel">
+        <div class="section-title">Startup Gate</div>
+        <div class="telem-grid">
+          <div class="telem-card"><div class="telem-label">Phase</div><div class="telem-value" id="s-phase" style="font-size:0.9rem;">search_green</div></div>
+          <div class="telem-card"><div class="telem-label">Detected</div><div class="telem-value" id="s-detected" style="font-size:0.9rem;">No</div></div>
+          <div class="telem-card"><div class="telem-label">Green</div><div class="telem-value" id="s-fraction" style="font-size:0.9rem;">0.00</div></div>
+          <div class="telem-card"><div class="telem-label">EMA</div><div class="telem-value" id="s-ema" style="font-size:0.9rem;">0.00</div></div>
+        </div>
+        <div class="hint" style="margin-top:10px;">
+          Circle: <span id="s-circle">None</span><br>
+          Handoffs: <span id="s-handoffs">0</span><br>
+          Last error: <span id="s-error">None</span>
+        </div>
+        <div class="btn-row" style="margin-top:10px;">
+          <button class="btn-secondary" onclick="resetStartupGate()">Reset Startup Gate</button>
+        </div>
+      </section>
+      <section class="panel">
         <div class="section-title">Telemetry</div>
         <div class="telem-grid">
           <div class="telem-card"><div class="telem-label">Speed</div><div class="telem-value speed" id="t-speed">0.000</div></div>
@@ -395,6 +423,13 @@
     let currentMode = 'manual';
     let lastCmdTime = 0;
     const CMD_INTERVAL_MS = 100;
+    const COMMANDS = {
+      pwmSteeringPrefix: 'pwm-a ',
+      pwmThrottlePrefix: 'pwm-b ',
+      constPrefix: 'const ',
+      modeManual: 'manual',
+      modeAuto: 'auto'
+    };
     function lerp(t, lo, hi) { return Math.round(lo + t * (hi - lo)); }
     function clamp(value, lo, hi) { return Math.max(lo, Math.min(hi, value)); }
     function scaledAxisToPwm(value, sensitivity) {
@@ -428,6 +463,18 @@
       currentMode = mode;
       document.getElementById('mode-manual').classList.toggle('active', mode === 'manual');
       document.getElementById('mode-auto').classList.toggle('active', mode === 'auto');
+    }
+    function setStartupUi(status = {}) {
+      const circle = status.best_circle;
+      document.getElementById('s-phase').textContent = status.phase || 'search_green';
+      document.getElementById('s-detected').textContent = status.green_detected ? 'Yes' : 'No';
+      document.getElementById('s-fraction').textContent = Number(status.green_fraction || 0).toFixed(2);
+      document.getElementById('s-ema').textContent = Number(status.green_ema || 0).toFixed(2);
+      document.getElementById('s-handoffs').textContent = status.handoff_count || 0;
+      document.getElementById('s-circle').textContent = circle
+        ? `(${circle.center_x}, ${circle.center_y}) r=${circle.radius} fill=${Number(circle.green_fraction || 0).toFixed(2)}`
+        : 'None';
+      document.getElementById('s-error').textContent = status.last_error || 'None';
     }
     async function refreshPorts() {
       try {
@@ -467,12 +514,12 @@
     function normalizeConstLine(line) {
       const trimmed = line.trim();
       if (!trimmed || trimmed.startsWith('#')) return null;
-      if (trimmed.startsWith('const ')) return trimmed;
-      return `const ${trimmed}`;
+      if (trimmed.startsWith(COMMANDS.constPrefix)) return trimmed;
+      return `${COMMANDS.constPrefix}${trimmed}`;
     }
     function validateConstCommand(command) {
       const parts = command.trim().split(/\s+/);
-      return parts.length >= 3 && parts[0] === 'const';
+      return parts.length >= 3 && `${parts[0]} ` === COMMANDS.constPrefix;
     }
     function syncConstNameFromSelect() {
       const selected = document.getElementById('const-name-select').value;
@@ -489,7 +536,7 @@
         return;
       }
       try {
-        await sendCommand(`const ${name} ${value}`);
+        await sendCommand(`${COMMANDS.constPrefix}${name} ${value}`);
       } catch (error) { alert(error.message); }
     }
     async function sendConstFile() {
@@ -528,15 +575,39 @@
     }
     async function sendNeutral() {
       try {
-        await sendCommand('pwm-a 1500');
-        await sendCommand('pwm-b 1500');
+        await sendCommand(`${COMMANDS.pwmSteeringPrefix}1500`);
+        await sendCommand(`${COMMANDS.pwmThrottlePrefix}1500`);
       } catch (error) { alert(error.message); }
+    }
+    async function sendRawCommand() {
+      const input = document.getElementById('raw-command');
+      const command = (input.value || '').trim();
+      if (!command) {
+        alert('Provide a command first.');
+        return;
+      }
+      try {
+        await sendCommand(command);
+        input.value = '';
+        await refreshTelemetry();
+      } catch (error) { alert(error.message); }
+    }
+    function handleRawCommandKey(event) {
+      if (event.key !== 'Enter') return;
+      event.preventDefault();
+      sendRawCommand().catch(error => alert(error.message));
     }
     async function setMode(mode) {
       const target = (document.getElementById('mode-target').value || 'both').trim();
       try {
         await api('/api/mode', { method: 'POST', headers: {'Content-Type': 'application/json'}, body: JSON.stringify({ mode, target }) });
         setModeUi(mode);
+        await refreshTelemetry();
+      } catch (error) { alert(error.message); }
+    }
+    async function resetStartupGate() {
+      try {
+        await api('/api/startup/reset', { method: 'POST' });
         await refreshTelemetry();
       } catch (error) { alert(error.message); }
     }
@@ -565,6 +636,7 @@
         document.getElementById('throttle-sensitivity').value = telemetry.throttle_sensitivity || 1.0;
         updateSliderLabel('steering');
         updateSliderLabel('throttle');
+        setStartupUi(telemetry.startup || {});
       } catch (error) { console.warn(error); }
     }
     async function refreshLogs() {
@@ -594,8 +666,8 @@
       const steerUs = scaledAxisToPwm(x, steeringSensitivity());
       const throttleUs = scaledAxisToPwm(y, throttleSensitivity());
       try {
-        await sendCommand(`pwm-a ${steerUs}`);
-        await sendCommand(`pwm-b ${throttleUs}`);
+        await sendCommand(`${COMMANDS.pwmSteeringPrefix}${steerUs}`);
+        await sendCommand(`${COMMANDS.pwmThrottlePrefix}${throttleUs}`);
       } catch (error) { console.warn(error); }
     });
     joystick.on('end', () => { if (currentMode === 'manual') sendNeutral().catch(error => console.warn(error)); });

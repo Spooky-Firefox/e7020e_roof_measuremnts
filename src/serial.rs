@@ -1,5 +1,6 @@
 use log::debug;
 
+use crate::controller_commands;
 use crate::shared_serial::SharedSerialPort;
 use crate::types::AlignmentReport;
 
@@ -8,9 +9,9 @@ use crate::types::AlignmentReport;
 /// Format: `align <angle_deg> <confidence>\n`
 /// Angle is in degrees, confidence in [0, 1].
 pub fn encode_alignment_command(report: &AlignmentReport) -> String {
-    format!(
-        "align {:.6} {:.4}\n",
-        report.angle_from_vertical_deg, report.confidence
+    controller_commands::format_alignment_command(
+        report.angle_from_vertical_deg,
+        report.confidence,
     )
 }
 
