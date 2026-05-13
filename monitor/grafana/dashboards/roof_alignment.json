@@ -128,7 +128,7 @@
         },
         "overrides": []
       },
-      "gridPos": { "h": 8, "w": 8, "x": 0, "y": 28 },
+      "gridPos": { "h": 8, "w": 6, "x": 0, "y": 28 },
       "id": 4,
       "options": {
         "legend": { "displayMode": "list", "placement": "bottom", "showLegend": true },
@@ -140,21 +140,9 @@
           "expr": "roof_alignment_angle_from_vertical_deg",
           "legendFormat": "chosen angle",
           "refId": "A"
-        },
-        {
-          "datasource": { "type": "prometheus", "uid": "prometheus" },
-          "expr": "roof_alignment_min_angle_deg",
-          "legendFormat": "min raw angle",
-          "refId": "B"
-        },
-        {
-          "datasource": { "type": "prometheus", "uid": "prometheus" },
-          "expr": "roof_alignment_max_angle_deg",
-          "legendFormat": "max raw angle",
-          "refId": "C"
         }
       ],
-      "title": "Angles",
+      "title": "Chosen Angle",
       "type": "timeseries"
     },
     {
@@ -171,7 +159,44 @@
         },
         "overrides": []
       },
-      "gridPos": { "h": 8, "w": 8, "x": 8, "y": 28 },
+      "gridPos": { "h": 8, "w": 6, "x": 6, "y": 28 },
+      "id": 18,
+      "options": {
+        "legend": { "displayMode": "list", "placement": "bottom", "showLegend": true },
+        "tooltip": { "mode": "multi", "sort": "none" }
+      },
+      "targets": [
+        {
+          "datasource": { "type": "prometheus", "uid": "prometheus" },
+          "expr": "roof_alignment_min_angle_deg",
+          "legendFormat": "min raw angle",
+          "refId": "B"
+        },
+        {
+          "datasource": { "type": "prometheus", "uid": "prometheus" },
+          "expr": "roof_alignment_max_angle_deg",
+          "legendFormat": "max raw angle",
+          "refId": "C"
+        }
+      ],
+      "title": "Raw Angle Range",
+      "type": "timeseries"
+    },
+    {
+      "datasource": { "type": "prometheus", "uid": "prometheus" },
+      "fieldConfig": {
+        "defaults": {
+          "custom": {
+            "fillOpacity": 5,
+            "lineWidth": 2,
+            "showPoints": "never",
+            "spanNulls": false
+          },
+          "unit": "deg"
+        },
+        "overrides": []
+      },
+      "gridPos": { "h": 8, "w": 6, "x": 12, "y": 28 },
       "id": 5,
       "options": {
         "legend": { "displayMode": "list", "placement": "bottom", "showLegend": true },
@@ -208,7 +233,7 @@
         },
         "overrides": []
       },
-      "gridPos": { "h": 8, "w": 8, "x": 16, "y": 28 },
+      "gridPos": { "h": 8, "w": 6, "x": 18, "y": 28 },
       "id": 6,
       "options": {
         "legend": { "displayMode": "list", "placement": "bottom", "showLegend": true },
@@ -558,6 +583,8 @@
             "showPoints": "never",
             "spanNulls": false
           },
+          "max": 2000,
+          "min": 1000,
           "unit": "none"
         },
         "overrides": []

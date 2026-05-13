@@ -140,9 +140,11 @@ The controller service is built into the Rust process and replaces the older sta
 | `pwm-b <microseconds>` | `pwm-b 1525` | Set throttle PWM directly in manual mode |
 | `speed <m/s>` | `speed 0.35` | Update the controller speed setpoint |
 | `align <angle_rad> <confidence>` | auto-sent by pipeline | Roof angle in radians (6 dp) and confidence (4 dp) |
-| `const <name> <value>` | `const ekf_q_angle 0.003` | Update a controller runtime tuning constant |
+| `const <name> <value>` | `const observer_q 0.003` | Update a controller runtime tuning constant |
 | `mode manual` | `mode manual` | Allow direct PWM commands from the host |
 | `mode auto` | `mode auto` | Allow Core 0 to apply control outputs from Core 1 |
+| `mode steering auto` | `mode steering auto` | Leave throttle manual while putting steering under automatic control |
+| `mode throttle manual` | `mode throttle manual` | Return throttle to manual while leaving steering unchanged |
 
 The browser UI includes a constants tuning panel with:
 
@@ -152,6 +154,8 @@ The browser UI includes a constants tuning panel with:
 - file upload support that sends a batch of const commands in one request
 
 Accepted file line formats are `const <name> <value>` and `<name> <value>`.
+
+Accepted runtime constant names are `speed`, `setpoint`, `speed_setpoint`, `speed_kp`, `speed_ki`, `speed_kd`, `steering_kp`, `steering_ki`, `steering_kd`, `observer_q`, `observer_r`, and `observer_p0`.
 
 ## Telemetry And Logs
 

@@ -284,11 +284,19 @@
       </section>
       <section class="panel">
         <div class="section-title">Drive Mode</div>
+        <div class="field-row">
+          <label for="mode-target">Mode target</label>
+          <select id="mode-target">
+            <option value="both">Both axes</option>
+            <option value="steering">Steering only</option>
+            <option value="throttle">Throttle only</option>
+          </select>
+        </div>
         <div class="mode-toggle">
           <button id="mode-manual" class="btn-secondary active" onclick="setMode('manual')">Manual</button>
           <button id="mode-auto" class="btn-warning" onclick="setMode('auto')">Auto</button>
         </div>
-        <div class="hint" style="margin-top:10px;">Auto mode sends the firmware mode command and blocks manual steering or throttle overrides.</div>
+        <div class="hint" style="margin-top:10px;">Pick whether the mode command applies to both outputs, steering only, or throttle only. Manual PWM overrides remain blocked whenever the host still considers the controller to be in auto mode.</div>
       </section>
       <section class="panel">
         <div class="section-title">Sensitivity</div>
@@ -309,21 +317,21 @@
           <label for="const-name-select">Preset name</label>
           <select id="const-name-select" onchange="syncConstNameFromSelect()">
             <option value="">Custom (type below)</option>
-            <option value="pid_steer_kp">pid_steer_kp</option>
-            <option value="pid_steer_ki">pid_steer_ki</option>
-            <option value="pid_steer_kd">pid_steer_kd</option>
-            <option value="pid_speed_kp">pid_speed_kp</option>
-            <option value="pid_speed_ki">pid_speed_ki</option>
-            <option value="pid_speed_kd">pid_speed_kd</option>
-            <option value="ekf_q_angle">ekf_q_angle</option>
-            <option value="ekf_q_bias">ekf_q_bias</option>
-            <option value="ekf_r_measure">ekf_r_measure</option>
-            <option value="ctrl_deadband">ctrl_deadband</option>
+            <option value="speed_setpoint">speed_setpoint</option>
+            <option value="speed_kp">speed_kp</option>
+            <option value="speed_ki">speed_ki</option>
+            <option value="speed_kd">speed_kd</option>
+            <option value="steering_kp">steering_kp</option>
+            <option value="steering_ki">steering_ki</option>
+            <option value="steering_kd">steering_kd</option>
+            <option value="observer_q">observer_q</option>
+            <option value="observer_r">observer_r</option>
+            <option value="observer_p0">observer_p0</option>
           </select>
         </div>
         <div class="field-row">
           <label for="const-name">Name</label>
-          <input id="const-name" type="text" placeholder="ekf_q_angle" />
+          <input id="const-name" type="text" placeholder="observer_q" />
         </div>
         <div class="field-row">
           <label for="const-value">Value</label>
@@ -525,8 +533,9 @@
       } catch (error) { alert(error.message); }
     }
     async function setMode(mode) {
+      const target = (document.getElementById('mode-target').value || 'both').trim();
       try {
-        await api('/api/mode', { method: 'POST', headers: {'Content-Type': 'application/json'}, body: JSON.stringify({ mode }) });
+        await api('/api/mode', { method: 'POST', headers: {'Content-Type': 'application/json'}, body: JSON.stringify({ mode, target }) });
         setModeUi(mode);
         await refreshTelemetry();
       } catch (error) { alert(error.message); }

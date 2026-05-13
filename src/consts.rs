@@ -12,7 +12,7 @@ pub const DEFAULT_CAMERA_FOURCC: &str = "MJPG";
 pub const CAMERA_WARMUP_READS: usize = 30;
 pub const CENTER_CROP_WIDTH_FRACTION: f64 = 1.0;
 pub const CENTER_CROP_HEIGHT_FRACTION: f64 = 1.0;
-pub const PROCESSING_DOWNSCALE: f64 = 0.35;
+pub const PROCESSING_DOWNSCALE: f64 = 0.25;
 
 pub const CLAHE_CLIP_LIMIT: f64 = 2.4;
 pub const CLAHE_TILE_SIZE: i32 = 8;
@@ -20,8 +20,8 @@ pub const GAUSSIAN_BLUR_KSIZE: i32 = 5;
 pub const CANNY_LOW_THRESHOLD: f64 = 24.0;
 pub const CANNY_HIGH_THRESHOLD: f64 = 72.0;
 pub const EDGE_DILATE_KERNEL_SIZE: i32 = 3;
-pub const PRIMARY_HOUGH_THRESHOLD: i32 = 72;
-pub const PRIMARY_HOUGH_MIN_LINE_LENGTH: f64 = 120.0;
+pub const PRIMARY_HOUGH_THRESHOLD: i32 = 80;
+pub const PRIMARY_HOUGH_MIN_LINE_LENGTH: f64 = 160.0;
 pub const PRIMARY_HOUGH_MAX_LINE_GAP: f64 = 10.0;
 
 pub const HOUGH_RHO: f64 = 1.0;

@@ -65,6 +65,17 @@ struct SettingsRequest {
 #[derive(Deserialize)]
 struct ModeRequest {
     mode: ControllerMode,
+    #[serde(default)]
+    target: ModeTarget,
+}
+
+#[derive(Clone, Copy, Deserialize, Default)]
+#[serde(rename_all = "snake_case")]
+enum ModeTarget {
+    Steering,
+    Throttle,
+    #[default]
+    Both,
 }
 
 struct ParsedTelemetry {
@@ -348,6 +359,10 @@ fn validate_command(command: &str) -> Result<()> {
         if name.is_empty() {
             anyhow::bail!("const name cannot be empty");
         }
+    } else if command.starts_with("mode ") && parse_mode_command(command).is_none() {
+        anyhow::bail!(
+            "mode command must be: mode <manual|auto> or mode <steering|throttle|both> <manual|auto>"
+        );
     }
 
     Ok(())
@@ -394,12 +409,17 @@ fn handle_mode(
     tx_metrics: &Sender<MetricsMsg>,
 ) -> Result<()> {
     let payload: ModeRequest = read_json_body(&mut request)?;
-    let command = match payload.mode {
-        ControllerMode::Manual => "mode manual",
-        ControllerMode::Auto => "mode auto",
+    let mode = match payload.mode {
+        ControllerMode::Manual => "manual",
+        ControllerMode::Auto => "auto",
+    };
+    let command = match payload.target {
+        ModeTarget::Both => format!("mode {mode}"),
+        ModeTarget::Steering => format!("mode steering {mode}"),
+        ModeTarget::Throttle => format!("mode throttle {mode}"),
     };
 
-    match send_serial_command(state, command) {
+    match send_serial_command(state, &command) {
         Ok(snapshot) => {
             publish_metrics(tx_metrics, &snapshot);
             respond_json(request, StatusCode(200), &json!({"ok": true}).to_string())
@@ -471,11 +491,26 @@ fn apply_command_snapshot(snapshot: &mut ControllerTelemetrySnapshot, command: &
         if let Ok(throttle_us) = value.trim().parse::<i32>() {
             snapshot.throttle_us = throttle_us;
         }
-    } else if let Some(value) = command.strip_prefix("mode ") {
-        snapshot.mode = match value.trim() {
-            "auto" => ControllerMode::Auto,
-            _ => ControllerMode::Manual,
-        };
+    } else if let Some(mode) = parse_mode_command(command) {
+        snapshot.mode = mode;
+    }
+}
+
+fn parse_mode_command(command: &str) -> Option<ControllerMode> {
+    let rest = command.strip_prefix("mode ")?.trim();
+    let mut parts = rest.split_ascii_whitespace();
+    let first = parts.next()?;
+    let second = parts.next();
+
+    if parts.next().is_some() {
+        return None;
+    }
+
+    let mode = second.unwrap_or(first);
+    match mode {
+        "manual" => Some(ControllerMode::Manual),
+        "auto" => Some(ControllerMode::Auto),
+        _ => None,
     }
 }
 

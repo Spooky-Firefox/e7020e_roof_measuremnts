@@ -157,7 +157,7 @@ The UI adds:
 - steering and throttle sensitivity sliders
 - constants tuning controls with preset dropdown names and free-text entry
 - constants file upload that expands into batched `const <name> <value>` commands
-- manual and auto mode buttons
+- manual and auto mode buttons with `both`, `steering`, and `throttle` targets
 - live telemetry polling
 - controller log download links
 
