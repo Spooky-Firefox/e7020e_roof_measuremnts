@@ -10,13 +10,29 @@ TIMESTAMP="$(date +%Y%m%d_%H%M%S)"
 APP_LOG="${LOG_DIR}/roof_control_hub_${TIMESTAMP}.log"
 TUNNEL_LOG="${LOG_DIR}/tunnel_${TIMESTAMP}.log"
 
+ENABLE_LOCAL_PROMETHEUS="${ENABLE_LOCAL_PROMETHEUS:-1}"
+ENABLE_LOCAL_GRAFANA="${ENABLE_LOCAL_GRAFANA:-0}"
+MONITOR_COMPOSE_FILE="${MONITOR_COMPOSE_FILE:-${SCRIPT_DIR}/monitor/docker-compose.yml}"
+PROMETHEUS_HOST_PORT="${PROMETHEUS_HOST_PORT:-9092}"
+GRAFANA_HOST_PORT="${GRAFANA_HOST_PORT:-3000}"
+
 ENABLE_SSH_TUNNEL="${ENABLE_SSH_TUNNEL:-1}"
 SSH_REMOTE_HOST="${SSH_REMOTE_HOST:-ronstad.se}"
 SSH_REMOTE_USER="${SSH_REMOTE_USER:-olle}"
 SSH_REMOTE_PORT="${SSH_REMOTE_PORT:-9091}"
 SSH_LOCAL_PORT="${SSH_LOCAL_PORT:-9091}"
 SSH_REMOTE_BIND_ADDR="${SSH_REMOTE_BIND_ADDR:-0.0.0.0}"
-SSH_TUNNELS="${SSH_TUNNELS:-${SSH_REMOTE_PORT}:${SSH_LOCAL_PORT},9092:9090}"
+
+DEFAULT_PROMETHEUS_TUNNEL_LOCAL_PORT="9090"
+if [ "$ENABLE_LOCAL_PROMETHEUS" = "1" ]; then
+    DEFAULT_PROMETHEUS_TUNNEL_LOCAL_PORT="$PROMETHEUS_HOST_PORT"
+fi
+SSH_TUNNELS="${SSH_TUNNELS:-${SSH_REMOTE_PORT}:${SSH_LOCAL_PORT},9092:${DEFAULT_PROMETHEUS_TUNNEL_LOCAL_PORT}}"
+
+MONITOR_SERVICES=(prometheus)
+if [ "$ENABLE_LOCAL_GRAFANA" = "1" ]; then
+    MONITOR_SERVICES+=(grafana)
+fi
 
 IFS=',' read -r -a TUNNEL_MAPPINGS <<< "$(echo "$SSH_TUNNELS" | tr -d ' ')"
 for mapping in "${TUNNEL_MAPPINGS[@]}"; do
@@ -59,6 +75,26 @@ echo "Tunnel log: ${TUNNEL_LOG}"
 
 cd "$SCRIPT_DIR"
 
+if [ "$ENABLE_LOCAL_PROMETHEUS" = "1" ]; then
+    if ! command -v docker >/dev/null 2>&1; then
+        echo "[$(date)] ERROR: docker is required when ENABLE_LOCAL_PROMETHEUS=1"
+        exit 1
+    fi
+
+    if [ ! -f "$MONITOR_COMPOSE_FILE" ]; then
+        echo "[$(date)] ERROR: monitor compose file not found at $MONITOR_COMPOSE_FILE"
+        exit 1
+    fi
+
+    echo "[$(date)] Starting local monitoring services: ${MONITOR_SERVICES[*]}"
+    docker compose -f "$MONITOR_COMPOSE_FILE" up -d "${MONITOR_SERVICES[@]}"
+
+    echo "[$(date)] Waiting for local Prometheus on :${PROMETHEUS_HOST_PORT}..."
+    until curl -fsS "http://127.0.0.1:${PROMETHEUS_HOST_PORT}/-/ready" >/dev/null 2>&1; do
+        sleep 2
+    done
+fi
+
 echo "[$(date)] Building roof control hub..."
 cargo build >> "$APP_LOG" 2>&1
 
@@ -90,6 +126,12 @@ done
 echo "[$(date)] Roof control hub is ready"
 echo "[$(date)] Controller UI: http://localhost:9091"
 echo "[$(date)] Prometheus metrics: http://localhost:9090/metrics"
+if [ "$ENABLE_LOCAL_PROMETHEUS" = "1" ]; then
+    echo "[$(date)] Local Prometheus: http://localhost:${PROMETHEUS_HOST_PORT}"
+fi
+if [ "$ENABLE_LOCAL_GRAFANA" = "1" ]; then
+    echo "[$(date)] Local Grafana: http://localhost:${GRAFANA_HOST_PORT}"
+fi
 
 if [ "$ENABLE_SSH_TUNNEL" = "1" ]; then
     if ! command -v autossh >/dev/null 2>&1; then

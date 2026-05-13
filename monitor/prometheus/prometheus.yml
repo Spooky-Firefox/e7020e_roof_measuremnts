@@ -1,6 +1,8 @@
+# Embedded default: 1 s is enough for operator telemetry while reducing
+# CPU, write load, and TSDB churn on the Rock Pi.
 global:
-  scrape_interval: 500ms
-  evaluation_interval: 500ms
+  scrape_interval: 1s
+  evaluation_interval: 1s
 
 scrape_configs:
   - job_name: roof_alignment

@@ -23,7 +23,8 @@ The application is headless by default, publishes Prometheus metrics on port `90
 | Metrics exporter | `http://127.0.0.1:9090/metrics` | Prometheus scrape endpoint for vision and controller metrics |
 | Controller UI | `http://127.0.0.1:9091/` | Browser UI for connect, manual control, mode switching, and telemetry |
 | Controller API | `http://127.0.0.1:9091/api/*` | JSON API for ports, connect, commands, telemetry, and log download |
-| Prometheus | `https://prometheus.e7012e.ronstad.se` | Remote monitoring endpoint served through Traefik ingress |
+| Local Prometheus | `http://127.0.0.1:9092` | Local Prometheus container that scrapes the app exporter on `:9090` |
+| Prometheus | `https://prometheus.e7012e.ronstad.se` | Remote view of the local Prometheus container when SSH tunneling is enabled |
 | Grafana | `https://e7012e.ronstad.se` | Dashboards for roof alignment and RP2350 telemetry |
 
 The default Grafana dashboard places vehicle/controller panels at the top so controller health and motion state are visible first during bring-up.
@@ -79,8 +80,10 @@ This opens the OpenCV overlay window so you can inspect either the startup green
 The script:
 
 - creates timestamped logs under `logs/`
+- starts a local Prometheus container on `:9092` by default
+- can also start local Grafana on `:3000` when enabled
 - waits for `:9090/metrics` and `:9091/` to come up
-- optionally creates `autossh` reverse tunnels for controller UI and Prometheus
+- optionally creates `autossh` reverse tunnels for controller UI and the local Prometheus container
 
 ## Kubernetes + Argo CD
 
@@ -111,13 +114,18 @@ Ingress resources are configured for TLS via Traefik ingress + cert-manager (`le
 | -------- | ------- | ------- |
 | `ROOF_CAMERA_INDEX` | `4` | Select which camera device to open |
 | `ROOF_SERIAL_PORT` | unset | When set, forwards alignment CSV output to that serial port |
+| `ENABLE_LOCAL_PROMETHEUS` | `1` in `start_server.sh` | Start local Prometheus from `monitor/docker-compose.yml` before launching the Rust app |
+| `ENABLE_LOCAL_GRAFANA` | `0` in `start_server.sh` | Also start local Grafana from the monitoring compose stack |
+| `MONITOR_COMPOSE_FILE` | `monitor/docker-compose.yml` | Compose file used for the local monitoring stack |
+| `PROMETHEUS_HOST_PORT` | `9092` | Host port for the local Prometheus container |
+| `GRAFANA_HOST_PORT` | `3000` | Host port for the local Grafana container |
 | `ENABLE_SSH_TUNNEL` | `1` in `start_server.sh` | Keep a reverse tunnel for the controller UI alive via `autossh` |
 | `SSH_REMOTE_HOST` | `ronstad.se` | SSH tunnel destination host |
 | `SSH_REMOTE_USER` | `olle` | SSH tunnel destination user |
 | `SSH_REMOTE_PORT` | `9091` | Legacy single-tunnel remote bind port used in `SSH_TUNNELS` default |
 | `SSH_LOCAL_PORT` | `9091` | Legacy single-tunnel local bind port used in `SSH_TUNNELS` default |
 | `SSH_REMOTE_BIND_ADDR` | `0.0.0.0` | Remote bind address for reverse tunnels so cluster ingress can reach forwarded ports |
-| `SSH_TUNNELS` | `9091:9091,9092:9090` | Comma-separated `remote:local` reverse tunnel mappings (UI + Prometheus by default) |
+| `SSH_TUNNELS` | `9091:9091,9092:9092` when local Prometheus is enabled | Comma-separated `remote:local` reverse tunnel mappings |
 
 ## Controller Bridge
 

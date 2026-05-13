@@ -38,13 +38,16 @@ The process exposes three different operational surfaces:
 
 1. Roof-alignment metrics on `:9090/metrics`.
 2. Controller browser UI and JSON API on `:9091`.
-3. Optional downstream serial output from the alignment stage when `ROOF_SERIAL_PORT` is set.
+3. Local Prometheus on `:9092` when started through `./start_server.sh`.
+4. Optional downstream serial output from the alignment stage when `ROOF_SERIAL_PORT` is set.
 
 In the current deployment model, this process runs on the laptop/vehicle and reverse-tunnels ports to `ronstad.se` using `autossh`.
 
 - `9091` is tunneled for controller UI access via `car.ronstad.se`.
-- `9092` is tunneled for Prometheus access via `prometheus.e7012e.ronstad.se`.
+- `9092` is tunneled for the local Prometheus container via `prometheus.e7012e.ronstad.se`.
 - Grafana is served via `e7012e.ronstad.se`.
+
+On the Rock Pi, `./start_server.sh` now starts the local Prometheus container before launching the Rust process. Prometheus scrapes the app's exporter over localhost, so short Wi-Fi outages do not create gaps caused by missed remote scrapes.
 
 Those public endpoints are terminated by Traefik ingress with cert-manager TLS.
 
