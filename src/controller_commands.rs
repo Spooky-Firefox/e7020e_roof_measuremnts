@@ -48,6 +48,6 @@ pub fn format_mode_command(target: Option<&str>, mode: ControllerMode) -> String
     }
 }
 
-pub fn format_alignment_command(angle_deg: f32, confidence: f32) -> String {
-    format!("{ALIGN_PREFIX}{angle_deg:.6} {confidence:.4}\n")
+pub fn format_alignment_command(angle_deg: f32, confidence: f32, delay_ms: u32) -> String {
+    format!("{ALIGN_PREFIX}{angle_deg:.6} {confidence:.4} {delay_ms}\n")
 }

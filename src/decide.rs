@@ -24,7 +24,8 @@ impl DecideStage {
     }
 
     pub fn process(&mut self, msg: ClassifiedMsg) -> AlignmentMsg {
-        send_alignment(&self.shared_port, &msg.report);
+        let delay_ms = msg.captured_at.elapsed().as_millis().min(u32::MAX as u128) as u32;
+        send_alignment(&self.shared_port, &msg.report, delay_ms);
 
         let axis = msg.report.dominant_axis.as_str();
         info!(

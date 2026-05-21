@@ -113,7 +113,7 @@ impl EnhanceStage {
         Ok(())
     }
 
-    pub fn process(&mut self, frame: Mat) -> Result<EnhanceMsg> {
+    pub fn process(&mut self, frame: Mat, captured_at: Instant) -> Result<EnhanceMsg> {
         let cropped = Self::crop_center(&frame)?;
         Self::maybe_downscale(&cropped, &mut self.cropped_frame)?;
         #[cfg(has_opencv_algorithm_hint)]
@@ -156,20 +156,21 @@ impl EnhanceStage {
             frame: std::mem::take(&mut self.cropped_frame),
             gray_contrast: std::mem::take(&mut self.gray_contrast),
             edges: std::mem::take(&mut self.edges),
+            captured_at,
         })
     }
 }
 
 pub fn run_enhance(
-    rx: Receiver<Mat>,
+    rx: Receiver<(Mat, Instant)>,
     tx: Sender<EnhanceMsg>,
     tx_metrics: Sender<MetricsMsg>,
 ) -> Result<()> {
     let mut stage = EnhanceStage::new()?;
-    for frame in rx {
+    for (frame, captured_at) in rx {
         let t_real = Instant::now();
         let t_cpu = ThreadTime::now();
-        let out = stage.process(frame)?;
+        let out = stage.process(frame, captured_at)?;
         tx_metrics
             .try_send(MetricsMsg {
                 stage: "enhance",

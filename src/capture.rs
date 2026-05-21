@@ -12,7 +12,7 @@ use opencv::{prelude::*, videoio};
 #[cfg(feature = "camera-support")]
 pub fn run_capture(
     mut cam: videoio::VideoCapture,
-    tx: Sender<Mat>,
+    tx: Sender<(Mat, Instant)>,
     tx_metrics: Sender<MetricsMsg>,
 ) -> Result<()> {
     let mut previous_frame_at: Option<Instant> = None;
@@ -70,7 +70,7 @@ pub fn run_capture(
             })
             .ok();
 
-        if tx.send(frame).is_err() {
+        if tx.send((frame, captured_at)).is_err() {
             break;
         }
     }
@@ -79,7 +79,7 @@ pub fn run_capture(
 }
 
 #[cfg(not(feature = "camera-support"))]
-pub fn run_capture(tx: Sender<opencv::prelude::Mat>, tx_metrics: Sender<MetricsMsg>) -> Result<()> {
+pub fn run_capture(tx: Sender<(opencv::prelude::Mat, Instant)>, tx_metrics: Sender<MetricsMsg>) -> Result<()> {
     use opencv::core;
     use opencv::prelude::*;
     use std::thread;
@@ -152,7 +152,7 @@ pub fn run_capture(tx: Sender<opencv::prelude::Mat>, tx_metrics: Sender<MetricsM
             })
             .ok();
 
-        if tx.send(frame).is_err() {
+        if tx.send((frame, captured_at)).is_err() {
             break;
         }
 

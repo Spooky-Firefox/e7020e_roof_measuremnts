@@ -31,6 +31,7 @@ use opencv::{prelude::*, videoio};
 use opencv::highgui;
 
 use opencv::prelude::Mat;
+use std::time::Instant;
 use types::{AlignmentMsg, ClassifiedMsg, DetectMsg, DisplayMsg, EnhanceMsg, MetricsMsg};
 
 #[cfg(feature = "camera-support")]
@@ -249,8 +250,8 @@ fn main() -> Result<()> {
         (frame_size, None)
     };
 
-    let (tx_raw, rx_raw) = bounded::<Mat>(2);
-    let (tx_cap, rx_cap) = bounded::<Mat>(2);
+    let (tx_raw, rx_raw) = bounded::<(Mat, Instant)>(2);
+    let (tx_cap, rx_cap) = bounded::<(Mat, Instant)>(2);
     let (tx_enh, rx_enh) = bounded::<EnhanceMsg>(2);
     let (tx_det, rx_det) = bounded::<DetectMsg>(2);
     let (tx_cls, rx_cls) = bounded::<ClassifiedMsg>(2);

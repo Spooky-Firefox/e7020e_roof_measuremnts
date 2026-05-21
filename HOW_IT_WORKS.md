@@ -148,15 +148,17 @@ The decide stage emits a compact serial command frame each cycle.
 
 ## Serial Output
 
-`src/serial.rs` is currently a non-blocking boilerplate path. If `ROOF_SERIAL_PORT` is set, the app attempts to open that port and send a command shaped like this:
+`src/serial.rs` sends a command to the RP2350 each time the decide stage produces a new alignment report. The format is:
 
 ```text
-align <angle_rad> <confidence>
+align <angle_deg> <confidence> <delay_ms>
 ```
 
-Angle is in radians (6 decimal places). Confidence is in `[0, 1]` (4 decimal places).
+- `angle_deg` is the signed angle from vertical in degrees (6 decimal places).
+- `confidence` is a value in `[0, 1]` (4 decimal places).
+- `delay_ms` is the pipeline latency from capture to send in milliseconds, measured by recording `Instant::now()` immediately after the camera `read()` call and computing elapsed time just before writing to the serial port. The firmware treats this field as optional and defaults to zero when it is missing, so older builds without the field remain compatible.
 
-This is intentionally simple for bring-up with a Pico2. The internal data model is already structured so a binary protocol can replace the CSV encoder later without changing the upstream pipeline.
+The firmware uses the delay value to compensate for pipeline latency when applying the alignment command.
 
 ## Controller Service
 
@@ -187,13 +189,49 @@ Manual PWM commands are blocked while auto mode is active, except for neutral re
 
 ## Controller Telemetry Flow
 
-The RP2350 sends event-tagged serial lines. The host currently understands three families:
+The RP2350 sends event-tagged serial lines. The host understands two wire formats:
 
-1. `controller` rows carrying steer PWM, throttle PWM, setpoint, error, and Kalman state.
-2. `hall_delta_t` rows carrying hall timing data.
-3. `ultrasound` rows carrying distance sensor values.
+### Key-value format (firmware default)
 
-The controller thread keeps the latest value for each field in memory, writes the raw event into a host CSV log, and forwards the reduced snapshot into the shared Prometheus exporter. That means Grafana can show controller state and distance sensors without running a second exporter.
+Lines prefixed with `>` and formatted as `key:value` pairs separated by commas:
+
+```
+>time_us:N,steer_us:N,throttle_us:N,setpoint_mps:N,error:N,wall_left_deg:N,wall_right_deg:N,wall_combined_deg:N,kalman0:N,...,drive_mode:N
+```
+
+Parsed keys include: `time`, `steer`, `throttle`, `setpoint`/`speed`, `error`, `wall_left_deg`, `wall_right_deg`, `wall_combined_deg`, `kalman0`–`kalman3`, `delta_t_us`, `distance0_cm`–`distance2_cm`, `drive_mode`.
+
+### CSV format (`simple_csv` firmware feature)
+
+Event-tagged CSV rows. The host supports four column counts:
+
+| Columns | Event | Notes |
+| ------- | ----- | ----- |
+| 4 | controller | Very old format: `ts,steer,throttle,speed` |
+| 14 | controller / hall_delta_t / ultrasound | Old format without drive_mode |
+| 15 | controller / hall_delta_t / ultrasound | Old format with drive_mode |
+| 18 | controller | New format: adds `wall_left_deg`, `wall_right_deg`, `wall_combined_deg` after `error` |
+| 17 | hall_delta_t | New format: extra null columns, `delta_t` at index 9 |
+
+Old 14- and 15-column log files remain fully replayable.
+
+### Wall-correction fields
+
+Three new fields appear in the `controller` telemetry event:
+
+- `wall_left_correction_deg`: left-wall centering correction
+- `wall_right_correction_deg`: right-wall centering correction
+- `wall_combined_correction_deg`: combined wall-centering correction
+
+All three are stored as `Option<f32>` in the host snapshot and written to the host CSV log. They are exposed as Prometheus gauges and forwarded to Grafana alongside the existing controller metrics.
+
+### Host CSV log columns (18)
+
+```
+ts,event,steer,throttle,setpoint,error,wall_left,wall_right,wall_combined,delta_t,k0,k1,k2,k3,dist0,dist1,dist2,drive_mode
+```
+
+The controller thread keeps the latest value for each field in memory, writes the raw event into this log, and forwards the reduced snapshot into the shared Prometheus exporter.
 
 ## Metrics And Grafana
 
@@ -219,6 +257,9 @@ Controller/vehicle panels are placed at the top of the dashboard so link state, 
 - distance sensor values
 - hall delta-t
 - Kalman state values
+- left-wall correction
+- right-wall correction
+- combined wall correction
 
 Prometheus and Grafana are hosted on `ronstad.se` in Kubernetes and exposed via Traefik ingress. The car UI ingress routes to an external backend (`vehicle-ui-external`) so traffic can reach the reverse-tunneled UI port when the local service is running.
 

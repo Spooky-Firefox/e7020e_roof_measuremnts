@@ -153,7 +153,7 @@ The controller service is built into the Rust process and replaces the older sta
 | `pwm-a <microseconds>` | `pwm-a 1600` | Set steering PWM directly in manual mode |
 | `pwm-b <microseconds>` | `pwm-b 1525` | Set throttle PWM directly in manual mode |
 | `speed <m/s>` | `speed 0.35` | Update the controller speed setpoint |
-| `align <angle_rad> <confidence>` | auto-sent by pipeline | Roof angle in radians (6 dp) and confidence (4 dp) |
+| `align <angle_deg> <confidence> <delay_ms>` | auto-sent by pipeline | Roof angle in degrees (6 dp), confidence (4 dp), and capture-to-send latency in ms |
 | `const <name> <value>` | `const observer_q 0.003` | Update a controller runtime tuning constant |
 | `mode manual` | `mode manual` | Allow direct PWM commands from the host |
 | `mode auto` | `mode auto` | Allow Core 0 to apply control outputs from Core 1 |
@@ -181,8 +181,10 @@ Accepted runtime constant names are `speed`, `setpoint`, `speed_setpoint`, `spee
 ## Telemetry And Logs
 
 - Vision metrics and controller metrics share the same Prometheus exporter.
-- Host-side controller CSV logs are written to `controller_logs/`.
-- The serial parser accepts both the older 4-column stream and the RP2350 `simple_csv` 14-column event stream.
+- Host-side controller CSV logs are written to `controller_logs/` in an 18-column format: `ts,event,steer,throttle,setpoint,error,wall_left,wall_right,wall_combined,delta_t,k0,k1,k2,k3,dist0,dist1,dist2,drive_mode`.
+- The serial parser accepts all historical formats: 4-column, 14-column, 15-column, the new 18-column controller format, and the new 17-column hall_delta_t format. Old log files remain fully replayable.
+- Three wall-correction fields (`wall_left_correction_deg`, `wall_right_correction_deg`, `wall_combined_correction_deg`) are now tracked in the controller snapshot and exposed as Prometheus gauges.
+- The alignment command sent to the RP2350 now includes a `delay_ms` field measuring the capture-to-send pipeline latency, which the firmware uses to compensate for processing delay.
 
 ## Angle Estimate
 

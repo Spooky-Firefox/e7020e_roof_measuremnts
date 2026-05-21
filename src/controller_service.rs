@@ -2,8 +2,8 @@ use std::fs::{self, File};
 use std::io::{BufRead, BufReader, BufWriter, Write};
 use std::path::{Path, PathBuf};
 use std::sync::{
-    Arc, Mutex,
     atomic::{AtomicBool, Ordering},
+    Arc, Mutex,
 };
 use std::thread;
 use std::time::{Duration, SystemTime, UNIX_EPOCH};
@@ -13,12 +13,11 @@ use crossbeam_channel::Sender;
 use log::{error, info, warn};
 use serde::Deserialize;
 use serde_json::json;
-use serialport::{SerialPort, available_ports};
+use serialport::{available_ports, SerialPort};
 use tiny_http::{Header, Method, Request, Response, StatusCode};
 
 use crate::{
-    consts,
-    controller_commands,
+    consts, controller_commands,
     shared_serial::SharedSerialPort,
     startup::SharedStartupState,
     types::{ControllerMetrics, ControllerMode, ControllerTelemetrySnapshot, MetricsMsg},
@@ -117,6 +116,9 @@ struct ControllerLogRow {
     throttle_us: Option<i32>,
     setpoint_mps: Option<f32>,
     error_value: Option<f32>,
+    wall_left_correction_deg: Option<f32>,
+    wall_right_correction_deg: Option<f32>,
+    wall_combined_correction_deg: Option<f32>,
     delta_t_us: Option<u32>,
     kalman0: Option<f32>,
     kalman1: Option<f32>,
@@ -125,6 +127,8 @@ struct ControllerLogRow {
     distance0_cm: Option<u32>,
     distance1_cm: Option<u32>,
     distance2_cm: Option<u32>,
+    /// 0 = Startup, 1 = Straight, 2 = Turning
+    drive_mode: Option<u8>,
 }
 
 enum TelemetryParseResult {
@@ -299,7 +303,7 @@ fn handle_connect(
     let mut log_writer = BufWriter::new(File::create(&log_path)?);
     writeln!(
         log_writer,
-        "timestamp_us,event,steer_us,throttle_us,setpoint_mps,error,delta_t_us,kalman0,kalman1,kalman2,kalman3,distance0_cm,distance1_cm,distance2_cm"
+        "timestamp_us,event,steer_us,throttle_us,setpoint_mps,error,delta_t_us,kalman0,kalman1,kalman2,kalman3,distance0_cm,distance1_cm,distance2_cm,drive_mode"
     )?;
     log_writer.flush()?;
 
@@ -468,10 +472,8 @@ fn handle_mode(
     tx_metrics: &Sender<MetricsMsg>,
 ) -> Result<()> {
     let payload: ModeRequest = read_json_body(&mut request)?;
-    let command = controller_commands::format_mode_command(
-        Some(payload.target.keyword()),
-        payload.mode,
-    );
+    let command =
+        controller_commands::format_mode_command(Some(payload.target.keyword()), payload.mode);
 
     match send_serial_command(state, &command) {
         Ok(snapshot) => {
@@ -549,11 +551,15 @@ fn send_serial_command(state: &SharedState, command: &str) -> Result<ControllerT
 }
 
 fn apply_command_snapshot(snapshot: &mut ControllerTelemetrySnapshot, command: &str) {
-    if let Some(value) = controller_commands::strip_value(command, controller_commands::PWM_STEERING_PREFIX) {
+    if let Some(value) =
+        controller_commands::strip_value(command, controller_commands::PWM_STEERING_PREFIX)
+    {
         if let Ok(steer_us) = value.trim().parse::<i32>() {
             snapshot.steer_us = steer_us;
         }
-    } else if let Some(value) = controller_commands::strip_value(command, controller_commands::PWM_THROTTLE_PREFIX) {
+    } else if let Some(value) =
+        controller_commands::strip_value(command, controller_commands::PWM_THROTTLE_PREFIX)
+    {
         if let Ok(throttle_us) = value.trim().parse::<i32>() {
             snapshot.throttle_us = throttle_us;
         }
@@ -708,6 +714,10 @@ fn parse_telemetry_line(line: &str) -> TelemetryParseResult {
         let mut distance0_cm = None;
         let mut distance1_cm = None;
         let mut distance2_cm = None;
+        let mut drive_mode: Option<u8> = None;
+        let mut wall_left_correction_deg = None;
+        let mut wall_right_correction_deg = None;
+        let mut wall_combined_correction_deg = None;
         let line = line.strip_prefix('>').unwrap_or(line);
 
         for pair in line.split(',') {
@@ -742,6 +752,14 @@ fn parse_telemetry_line(line: &str) -> TelemetryParseResult {
                 distance1_cm = value.parse().ok();
             } else if key == "distance2_cm" {
                 distance2_cm = value.parse().ok();
+            } else if key == "drive_mode" {
+                drive_mode = value.parse().ok();
+            } else if key == "wall_left_deg" {
+                wall_left_correction_deg = value.parse().ok();
+            } else if key == "wall_right_deg" {
+                wall_right_correction_deg = value.parse().ok();
+            } else if key == "wall_combined_deg" {
+                wall_combined_correction_deg = value.parse().ok();
             }
         }
 
@@ -764,6 +782,9 @@ fn parse_telemetry_line(line: &str) -> TelemetryParseResult {
                     throttle_us,
                     setpoint_mps,
                     error_value,
+                    wall_left_correction_deg,
+                    wall_right_correction_deg,
+                    wall_combined_correction_deg,
                     delta_t_us: None,
                     kalman0,
                     kalman1,
@@ -772,6 +793,7 @@ fn parse_telemetry_line(line: &str) -> TelemetryParseResult {
                     distance0_cm: None,
                     distance1_cm: None,
                     distance2_cm: None,
+                    drive_mode,
                 },
             };
         }
@@ -786,6 +808,9 @@ fn parse_telemetry_line(line: &str) -> TelemetryParseResult {
                     throttle_us: None,
                     setpoint_mps: None,
                     error_value: None,
+                    wall_left_correction_deg: None,
+                    wall_right_correction_deg: None,
+                    wall_combined_correction_deg: None,
                     delta_t_us,
                     kalman0: None,
                     kalman1: None,
@@ -794,6 +819,7 @@ fn parse_telemetry_line(line: &str) -> TelemetryParseResult {
                     distance0_cm: None,
                     distance1_cm: None,
                     distance2_cm: None,
+                    drive_mode: None,
                 },
             };
         }
@@ -808,6 +834,9 @@ fn parse_telemetry_line(line: &str) -> TelemetryParseResult {
                     throttle_us: None,
                     setpoint_mps: None,
                     error_value: None,
+                    wall_left_correction_deg: None,
+                    wall_right_correction_deg: None,
+                    wall_combined_correction_deg: None,
                     delta_t_us: None,
                     kalman0: None,
                     kalman1: None,
@@ -816,6 +845,7 @@ fn parse_telemetry_line(line: &str) -> TelemetryParseResult {
                     distance0_cm,
                     distance1_cm,
                     distance2_cm,
+                    drive_mode: None,
                 },
             };
         }
@@ -848,6 +878,9 @@ fn parse_telemetry_line(line: &str) -> TelemetryParseResult {
                         throttle_us: Some(throttle_us),
                         setpoint_mps: Some(speed_mps),
                         error_value: None,
+                        wall_left_correction_deg: None,
+                        wall_right_correction_deg: None,
+                        wall_combined_correction_deg: None,
                         delta_t_us: None,
                         kalman0: None,
                         kalman1: None,
@@ -856,6 +889,7 @@ fn parse_telemetry_line(line: &str) -> TelemetryParseResult {
                         distance0_cm: None,
                         distance1_cm: None,
                         distance2_cm: None,
+                        drive_mode: None,
                     },
                 }
             }
@@ -863,9 +897,15 @@ fn parse_telemetry_line(line: &str) -> TelemetryParseResult {
         };
     }
 
-    if parts.len() == 14 {
+    if parts.len() == 14 || parts.len() == 15 {
         let Ok(timestamp_us) = parts[0].trim().parse::<u64>() else {
             return TelemetryParseResult::Invalid;
+        };
+        // Column 14 (index 14) is drive_mode, present only in the new 15-column format.
+        let csv_drive_mode: Option<u8> = if parts.len() == 15 {
+            parse_csv_u32(parts[14]).map(|v| v as u8)
+        } else {
+            None
         };
 
         return match parts[1].trim() {
@@ -905,6 +945,9 @@ fn parse_telemetry_line(line: &str) -> TelemetryParseResult {
                             throttle_us: Some(throttle_us),
                             setpoint_mps: Some(speed_mps),
                             error_value,
+                            wall_left_correction_deg: None,
+                            wall_right_correction_deg: None,
+                            wall_combined_correction_deg: None,
                             delta_t_us: None,
                             kalman0,
                             kalman1,
@@ -913,6 +956,7 @@ fn parse_telemetry_line(line: &str) -> TelemetryParseResult {
                             distance0_cm: parse_csv_u32(parts[11]),
                             distance1_cm: parse_csv_u32(parts[12]),
                             distance2_cm: parse_csv_u32(parts[13]),
+                            drive_mode: csv_drive_mode,
                         },
                     },
                     _ => TelemetryParseResult::Invalid,
@@ -927,6 +971,9 @@ fn parse_telemetry_line(line: &str) -> TelemetryParseResult {
                     throttle_us: None,
                     setpoint_mps: None,
                     error_value: None,
+                    wall_left_correction_deg: None,
+                    wall_right_correction_deg: None,
+                    wall_combined_correction_deg: None,
                     delta_t_us: None,
                     kalman0: None,
                     kalman1: None,
@@ -935,6 +982,7 @@ fn parse_telemetry_line(line: &str) -> TelemetryParseResult {
                     distance0_cm: parse_csv_u32(parts[11]),
                     distance1_cm: parse_csv_u32(parts[12]),
                     distance2_cm: parse_csv_u32(parts[13]),
+                    drive_mode: None,
                 },
             },
             "hall_delta_t" => TelemetryParseResult::Parsed {
@@ -946,6 +994,9 @@ fn parse_telemetry_line(line: &str) -> TelemetryParseResult {
                     throttle_us: None,
                     setpoint_mps: None,
                     error_value: None,
+                    wall_left_correction_deg: None,
+                    wall_right_correction_deg: None,
+                    wall_combined_correction_deg: None,
                     delta_t_us: parse_csv_u32(parts[6]),
                     kalman0: None,
                     kalman1: None,
@@ -954,6 +1005,104 @@ fn parse_telemetry_line(line: &str) -> TelemetryParseResult {
                     distance0_cm: None,
                     distance1_cm: None,
                     distance2_cm: None,
+                    drive_mode: None,
+                },
+            },
+            _ => TelemetryParseResult::Invalid,
+        };
+    }
+
+    // New 18-column controller format and 17-column hall_delta_t format.
+    // controller (18):  ts,controller,steer,throttle,setpoint,error,wall_left,wall_right,wall_combined,null,k0,k1,k2,k3,null,null,null,drive_mode
+    // hall_delta_t (17): ts,hall_delta_t,null×7,delta_t,null×7
+    if parts.len() == 17 || parts.len() == 18 {
+        let Ok(timestamp_us) = parts[0].trim().parse::<u64>() else {
+            return TelemetryParseResult::Invalid;
+        };
+
+        return match parts[1].trim() {
+            "controller" if parts.len() == 18 => {
+                let parsed = (
+                    parts[2].trim().parse::<i32>(),
+                    parts[3].trim().parse::<i32>(),
+                    parts[4].trim().parse::<f32>(),
+                    parse_csv_f32(parts[5]),
+                    parse_csv_f32(parts[6]),
+                    parse_csv_f32(parts[7]),
+                    parse_csv_f32(parts[8]),
+                    parse_csv_f32(parts[10]),
+                    parse_csv_f32(parts[11]),
+                    parse_csv_f32(parts[12]),
+                    parse_csv_f32(parts[13]),
+                    parse_csv_u32(parts[17]).map(|v| v as u8),
+                );
+
+                match parsed {
+                    (
+                        Ok(steer_us),
+                        Ok(throttle_us),
+                        Ok(speed_mps),
+                        error_value,
+                        wall_left,
+                        wall_right,
+                        wall_combined,
+                        kalman0,
+                        kalman1,
+                        kalman2,
+                        kalman3,
+                        csv_drive_mode,
+                    ) => TelemetryParseResult::Parsed {
+                        snapshot: Some(ParsedTelemetry {
+                            timestamp_us,
+                            steer_us,
+                            throttle_us,
+                            speed_mps,
+                        }),
+                        log_row: ControllerLogRow {
+                            timestamp_us,
+                            event: "controller",
+                            steer_us: Some(steer_us),
+                            throttle_us: Some(throttle_us),
+                            setpoint_mps: Some(speed_mps),
+                            error_value,
+                            wall_left_correction_deg: wall_left,
+                            wall_right_correction_deg: wall_right,
+                            wall_combined_correction_deg: wall_combined,
+                            delta_t_us: None,
+                            kalman0,
+                            kalman1,
+                            kalman2,
+                            kalman3,
+                            distance0_cm: None,
+                            distance1_cm: None,
+                            distance2_cm: None,
+                            drive_mode: csv_drive_mode,
+                        },
+                    },
+                    _ => TelemetryParseResult::Invalid,
+                }
+            }
+            "hall_delta_t" if parts.len() == 17 => TelemetryParseResult::Parsed {
+                snapshot: None,
+                log_row: ControllerLogRow {
+                    timestamp_us,
+                    event: "hall_delta_t",
+                    steer_us: None,
+                    throttle_us: None,
+                    setpoint_mps: None,
+                    error_value: None,
+                    wall_left_correction_deg: None,
+                    wall_right_correction_deg: None,
+                    wall_combined_correction_deg: None,
+                    delta_t_us: parse_csv_u32(parts[9]),
+                    kalman0: None,
+                    kalman1: None,
+                    kalman2: None,
+                    kalman3: None,
+                    distance0_cm: None,
+                    distance1_cm: None,
+                    distance2_cm: None,
+                    drive_mode: None,
                 },
             },
             _ => TelemetryParseResult::Invalid,
@@ -1007,6 +1156,18 @@ fn apply_log_row_to_snapshot(
     if let Some(distance2_cm) = log_row.distance2_cm {
         snapshot.distance2_cm = Some(distance2_cm);
     }
+    if let Some(drive_mode) = log_row.drive_mode {
+        snapshot.drive_mode = Some(drive_mode);
+    }
+    if let Some(v) = log_row.wall_left_correction_deg {
+        snapshot.wall_left_correction_deg = Some(v);
+    }
+    if let Some(v) = log_row.wall_right_correction_deg {
+        snapshot.wall_right_correction_deg = Some(v);
+    }
+    if let Some(v) = log_row.wall_combined_correction_deg {
+        snapshot.wall_combined_correction_deg = Some(v);
+    }
 }
 
 fn is_command_echo(line: &str) -> bool {
@@ -1034,13 +1195,16 @@ fn parse_csv_u32(value: &str) -> Option<u32> {
 fn write_log_row(log_writer: &mut BufWriter<File>, row: &ControllerLogRow) -> std::io::Result<()> {
     writeln!(
         log_writer,
-        "{},{},{},{},{},{},{},{},{},{},{},{},{},{}",
+        "{},{},{},{},{},{},{},{},{},{},{},{},{},{},{},{},{},{}",
         row.timestamp_us,
         row.event,
         format_csv_opt_i32(row.steer_us),
         format_csv_opt_i32(row.throttle_us),
         format_csv_opt_f32(row.setpoint_mps),
         format_csv_opt_f32(row.error_value),
+        format_csv_opt_f32(row.wall_left_correction_deg),
+        format_csv_opt_f32(row.wall_right_correction_deg),
+        format_csv_opt_f32(row.wall_combined_correction_deg),
         format_csv_opt_u32(row.delta_t_us),
         format_csv_opt_f32(row.kalman0),
         format_csv_opt_f32(row.kalman1),
@@ -1049,6 +1213,7 @@ fn write_log_row(log_writer: &mut BufWriter<File>, row: &ControllerLogRow) -> st
         format_csv_opt_u32(row.distance0_cm),
         format_csv_opt_u32(row.distance1_cm),
         format_csv_opt_u32(row.distance2_cm),
+        format_csv_opt_u8(row.drive_mode),
     )
 }
 
@@ -1059,6 +1224,12 @@ fn format_csv_opt_i32(value: Option<i32>) -> String {
 }
 
 fn format_csv_opt_u32(value: Option<u32>) -> String {
+    value
+        .map(|value| value.to_string())
+        .unwrap_or_else(|| "null".to_string())
+}
+
+fn format_csv_opt_u8(value: Option<u8>) -> String {
     value
         .map(|value| value.to_string())
         .unwrap_or_else(|| "null".to_string())

@@ -90,6 +90,11 @@ struct Metrics {
     controller_distance0_cm: Gauge,
     controller_distance1_cm: Gauge,
     controller_distance2_cm: Gauge,
+    /// Drive mode: 0 = Startup, 1 = Straight, 2 = Turning
+    controller_drive_mode: Gauge,
+    controller_wall_left_correction_deg: Gauge,
+    controller_wall_right_correction_deg: Gauge,
+    controller_wall_combined_correction_deg: Gauge,
     controller_last_update_us: Gauge,
     controller_parse_errors: Gauge,
     controller_serial_errors: Gauge,
@@ -131,17 +136,26 @@ impl Metrics {
             &["stage"],
         )?;
         let camera_setting = GaugeVec::new(
-            Opts::new("camera_setting", "Current camera configuration and driver-applied values")
-                .namespace(consts::METRICS_NAMESPACE),
+            Opts::new(
+                "camera_setting",
+                "Current camera configuration and driver-applied values",
+            )
+            .namespace(consts::METRICS_NAMESPACE),
             &["setting"],
         )?;
         let capture_actual_fps = Gauge::with_opts(
-            Opts::new("capture_actual_fps", "Observed capture frame rate from inter-frame timing")
-                .namespace(consts::METRICS_NAMESPACE),
+            Opts::new(
+                "capture_actual_fps",
+                "Observed capture frame rate from inter-frame timing",
+            )
+            .namespace(consts::METRICS_NAMESPACE),
         )?;
         let capture_frame_period_ms = Gauge::with_opts(
-            Opts::new("capture_frame_period_ms", "Observed capture frame period in milliseconds")
-                .namespace(consts::METRICS_NAMESPACE),
+            Opts::new(
+                "capture_frame_period_ms",
+                "Observed capture frame period in milliseconds",
+            )
+            .namespace(consts::METRICS_NAMESPACE),
         )?;
         let total_lines = Gauge::with_opts(
             Opts::new("lines_total", "Total Hough lines in the most recent frame")
@@ -152,8 +166,11 @@ impl Metrics {
                 .namespace(consts::METRICS_NAMESPACE),
         )?;
         let horizontal_lines = Gauge::with_opts(
-            Opts::new("horizontal_lines", "Horizontal lines in the most recent frame")
-                .namespace(consts::METRICS_NAMESPACE),
+            Opts::new(
+                "horizontal_lines",
+                "Horizontal lines in the most recent frame",
+            )
+            .namespace(consts::METRICS_NAMESPACE),
         )?;
         let outlier_lines = Gauge::with_opts(
             Opts::new("outlier_lines", "Outlier lines in the most recent frame")
@@ -167,104 +184,207 @@ impl Metrics {
             .namespace(consts::METRICS_NAMESPACE),
         )?;
         let alignment_confidence = Gauge::with_opts(
-            Opts::new("alignment_confidence", "Confidence score of the chosen grid angle")
-                .namespace(consts::METRICS_NAMESPACE),
+            Opts::new(
+                "alignment_confidence",
+                "Confidence score of the chosen grid angle",
+            )
+            .namespace(consts::METRICS_NAMESPACE),
         )?;
         let vertical_spread = Gauge::with_opts(
-            Opts::new("vertical_stddev_deg", "Stddev of vertical line angle residuals")
-                .namespace(consts::METRICS_NAMESPACE),
+            Opts::new(
+                "vertical_stddev_deg",
+                "Stddev of vertical line angle residuals",
+            )
+            .namespace(consts::METRICS_NAMESPACE),
         )?;
         let horizontal_spread = Gauge::with_opts(
-            Opts::new("horizontal_stddev_deg", "Stddev of horizontal line angle residuals")
-                .namespace(consts::METRICS_NAMESPACE),
+            Opts::new(
+                "horizontal_stddev_deg",
+                "Stddev of horizontal line angle residuals",
+            )
+            .namespace(consts::METRICS_NAMESPACE),
         )?;
         let min_angle = Gauge::with_opts(
-            Opts::new("min_angle_deg", "Minimum raw line angle detected in the most recent frame")
-                .namespace(consts::METRICS_NAMESPACE),
+            Opts::new(
+                "min_angle_deg",
+                "Minimum raw line angle detected in the most recent frame",
+            )
+            .namespace(consts::METRICS_NAMESPACE),
         )?;
         let max_angle = Gauge::with_opts(
-            Opts::new("max_angle_deg", "Maximum raw line angle detected in the most recent frame")
-                .namespace(consts::METRICS_NAMESPACE),
+            Opts::new(
+                "max_angle_deg",
+                "Maximum raw line angle detected in the most recent frame",
+            )
+            .namespace(consts::METRICS_NAMESPACE),
         )?;
         let controller_connected = Gauge::with_opts(
-            Opts::new("controller_connected", "Whether the RP2350 controller serial link is connected")
-                .namespace(consts::METRICS_NAMESPACE),
+            Opts::new(
+                "controller_connected",
+                "Whether the RP2350 controller serial link is connected",
+            )
+            .namespace(consts::METRICS_NAMESPACE),
         )?;
         let controller_steer_us = Gauge::with_opts(
-            Opts::new("controller_steer_pwm_us", "Latest controller steering PWM command in microseconds")
-                .namespace(consts::METRICS_NAMESPACE),
+            Opts::new(
+                "controller_steer_pwm_us",
+                "Latest controller steering PWM command in microseconds",
+            )
+            .namespace(consts::METRICS_NAMESPACE),
         )?;
         let controller_throttle_us = Gauge::with_opts(
-            Opts::new("controller_throttle_pwm_us", "Latest controller throttle PWM command in microseconds")
-                .namespace(consts::METRICS_NAMESPACE),
+            Opts::new(
+                "controller_throttle_pwm_us",
+                "Latest controller throttle PWM command in microseconds",
+            )
+            .namespace(consts::METRICS_NAMESPACE),
         )?;
         let controller_speed_mps = Gauge::with_opts(
-            Opts::new("controller_speed_mps", "Latest controller speed telemetry in meters per second")
-                .namespace(consts::METRICS_NAMESPACE),
+            Opts::new(
+                "controller_speed_mps",
+                "Latest controller speed telemetry in meters per second",
+            )
+            .namespace(consts::METRICS_NAMESPACE),
         )?;
         let controller_setpoint_mps = Gauge::with_opts(
-            Opts::new("controller_setpoint_mps", "Latest controller setpoint received from serial in meters per second")
-                .namespace(consts::METRICS_NAMESPACE),
+            Opts::new(
+                "controller_setpoint_mps",
+                "Latest controller setpoint received from serial in meters per second",
+            )
+            .namespace(consts::METRICS_NAMESPACE),
         )?;
         let controller_error = Gauge::with_opts(
-            Opts::new("controller_error", "Latest controller error term received from serial")
-                .namespace(consts::METRICS_NAMESPACE),
+            Opts::new(
+                "controller_error",
+                "Latest controller error term received from serial",
+            )
+            .namespace(consts::METRICS_NAMESPACE),
         )?;
         let controller_hall_delta_t_us = Gauge::with_opts(
-            Opts::new("controller_hall_delta_t_us", "Latest hall sensor delta-t received from serial in microseconds")
-                .namespace(consts::METRICS_NAMESPACE),
+            Opts::new(
+                "controller_hall_delta_t_us",
+                "Latest hall sensor delta-t received from serial in microseconds",
+            )
+            .namespace(consts::METRICS_NAMESPACE),
         )?;
         let controller_kalman0 = Gauge::with_opts(
-            Opts::new("controller_kalman0", "Latest controller Kalman state 0 from serial")
-                .namespace(consts::METRICS_NAMESPACE),
+            Opts::new(
+                "controller_kalman0",
+                "Latest controller Kalman state 0 from serial",
+            )
+            .namespace(consts::METRICS_NAMESPACE),
         )?;
         let controller_kalman1 = Gauge::with_opts(
-            Opts::new("controller_kalman1", "Latest controller Kalman state 1 from serial")
-                .namespace(consts::METRICS_NAMESPACE),
+            Opts::new(
+                "controller_kalman1",
+                "Latest controller Kalman state 1 from serial",
+            )
+            .namespace(consts::METRICS_NAMESPACE),
         )?;
         let controller_kalman2 = Gauge::with_opts(
-            Opts::new("controller_kalman2", "Latest controller Kalman state 2 from serial")
-                .namespace(consts::METRICS_NAMESPACE),
+            Opts::new(
+                "controller_kalman2",
+                "Latest controller Kalman state 2 from serial",
+            )
+            .namespace(consts::METRICS_NAMESPACE),
         )?;
         let controller_kalman3 = Gauge::with_opts(
-            Opts::new("controller_kalman3", "Latest controller Kalman state 3 from serial")
-                .namespace(consts::METRICS_NAMESPACE),
+            Opts::new(
+                "controller_kalman3",
+                "Latest controller Kalman state 3 from serial",
+            )
+            .namespace(consts::METRICS_NAMESPACE),
         )?;
         let controller_distance0_cm = Gauge::with_opts(
-            Opts::new("controller_distance0_cm", "Latest distance sensor 0 reading from serial in centimeters")
-                .namespace(consts::METRICS_NAMESPACE),
+            Opts::new(
+                "controller_distance0_cm",
+                "Latest distance sensor 0 reading from serial in centimeters",
+            )
+            .namespace(consts::METRICS_NAMESPACE),
         )?;
         let controller_distance1_cm = Gauge::with_opts(
-            Opts::new("controller_distance1_cm", "Latest distance sensor 1 reading from serial in centimeters")
-                .namespace(consts::METRICS_NAMESPACE),
+            Opts::new(
+                "controller_distance1_cm",
+                "Latest distance sensor 1 reading from serial in centimeters",
+            )
+            .namespace(consts::METRICS_NAMESPACE),
         )?;
         let controller_distance2_cm = Gauge::with_opts(
-            Opts::new("controller_distance2_cm", "Latest distance sensor 2 reading from serial in centimeters")
-                .namespace(consts::METRICS_NAMESPACE),
+            Opts::new(
+                "controller_distance2_cm",
+                "Latest distance sensor 2 reading from serial in centimeters",
+            )
+            .namespace(consts::METRICS_NAMESPACE),
+        )?;
+        let controller_drive_mode = Gauge::with_opts(
+            Opts::new(
+                "controller_drive_mode",
+                "Controller drive mode: 0=Startup, 1=Straight, 2=Turning",
+            )
+            .namespace(consts::METRICS_NAMESPACE),
+        )?;
+        let controller_wall_left_correction_deg = Gauge::with_opts(
+            Opts::new(
+                "controller_wall_left_correction_deg",
+                "Left-wall centering correction from controller telemetry in degrees",
+            )
+            .namespace(consts::METRICS_NAMESPACE),
+        )?;
+        let controller_wall_right_correction_deg = Gauge::with_opts(
+            Opts::new(
+                "controller_wall_right_correction_deg",
+                "Right-wall centering correction from controller telemetry in degrees",
+            )
+            .namespace(consts::METRICS_NAMESPACE),
+        )?;
+        let controller_wall_combined_correction_deg = Gauge::with_opts(
+            Opts::new(
+                "controller_wall_combined_correction_deg",
+                "Combined wall-centering correction from controller telemetry in degrees",
+            )
+            .namespace(consts::METRICS_NAMESPACE),
         )?;
         let controller_last_update_us = Gauge::with_opts(
-            Opts::new("controller_last_update_us", "Latest controller telemetry timestamp in microseconds")
-                .namespace(consts::METRICS_NAMESPACE),
+            Opts::new(
+                "controller_last_update_us",
+                "Latest controller telemetry timestamp in microseconds",
+            )
+            .namespace(consts::METRICS_NAMESPACE),
         )?;
         let controller_parse_errors = Gauge::with_opts(
-            Opts::new("controller_parse_errors", "Controller telemetry parse errors observed by the host")
-                .namespace(consts::METRICS_NAMESPACE),
+            Opts::new(
+                "controller_parse_errors",
+                "Controller telemetry parse errors observed by the host",
+            )
+            .namespace(consts::METRICS_NAMESPACE),
         )?;
         let controller_serial_errors = Gauge::with_opts(
-            Opts::new("controller_serial_errors", "Controller serial I/O errors observed by the host")
-                .namespace(consts::METRICS_NAMESPACE),
+            Opts::new(
+                "controller_serial_errors",
+                "Controller serial I/O errors observed by the host",
+            )
+            .namespace(consts::METRICS_NAMESPACE),
         )?;
         let controller_mode_manual = Gauge::with_opts(
-            Opts::new("controller_mode_manual", "1 when host mode is manual, 0 when auto")
-                .namespace(consts::METRICS_NAMESPACE),
+            Opts::new(
+                "controller_mode_manual",
+                "1 when host mode is manual, 0 when auto",
+            )
+            .namespace(consts::METRICS_NAMESPACE),
         )?;
         let controller_steering_sensitivity = Gauge::with_opts(
-            Opts::new("controller_steering_sensitivity", "Current UI steering sensitivity factor")
-                .namespace(consts::METRICS_NAMESPACE),
+            Opts::new(
+                "controller_steering_sensitivity",
+                "Current UI steering sensitivity factor",
+            )
+            .namespace(consts::METRICS_NAMESPACE),
         )?;
         let controller_throttle_sensitivity = Gauge::with_opts(
-            Opts::new("controller_throttle_sensitivity", "Current UI throttle sensitivity factor")
-                .namespace(consts::METRICS_NAMESPACE),
+            Opts::new(
+                "controller_throttle_sensitivity",
+                "Current UI throttle sensitivity factor",
+            )
+            .namespace(consts::METRICS_NAMESPACE),
         )?;
 
         prometheus::register(Box::new(stage_real.clone()))?;
@@ -298,6 +418,10 @@ impl Metrics {
         prometheus::register(Box::new(controller_distance0_cm.clone()))?;
         prometheus::register(Box::new(controller_distance1_cm.clone()))?;
         prometheus::register(Box::new(controller_distance2_cm.clone()))?;
+        prometheus::register(Box::new(controller_drive_mode.clone()))?;
+        prometheus::register(Box::new(controller_wall_left_correction_deg.clone()))?;
+        prometheus::register(Box::new(controller_wall_right_correction_deg.clone()))?;
+        prometheus::register(Box::new(controller_wall_combined_correction_deg.clone()))?;
         prometheus::register(Box::new(controller_last_update_us.clone()))?;
         prometheus::register(Box::new(controller_parse_errors.clone()))?;
         prometheus::register(Box::new(controller_serial_errors.clone()))?;
@@ -337,6 +461,10 @@ impl Metrics {
             controller_distance0_cm,
             controller_distance1_cm,
             controller_distance2_cm,
+            controller_drive_mode,
+            controller_wall_left_correction_deg,
+            controller_wall_right_correction_deg,
+            controller_wall_combined_correction_deg,
             controller_last_update_us,
             controller_parse_errors,
             controller_serial_errors,
@@ -354,7 +482,8 @@ impl Metrics {
         self.controller_speed_mps.set(controller.speed_mps);
         self.controller_setpoint_mps.set(controller.setpoint_mps);
         self.controller_error.set(controller.error_value);
-        self.controller_hall_delta_t_us.set(controller.hall_delta_t_us);
+        self.controller_hall_delta_t_us
+            .set(controller.hall_delta_t_us);
         self.controller_kalman0.set(controller.kalman0);
         self.controller_kalman1.set(controller.kalman1);
         self.controller_kalman2.set(controller.kalman2);
@@ -362,7 +491,23 @@ impl Metrics {
         self.controller_distance0_cm.set(controller.distance0_cm);
         self.controller_distance1_cm.set(controller.distance1_cm);
         self.controller_distance2_cm.set(controller.distance2_cm);
-        self.controller_last_update_us.set(controller.last_update_us);
+        if controller.drive_mode.is_finite() {
+            self.controller_drive_mode.set(controller.drive_mode);
+        }
+        if controller.wall_left_correction_deg.is_finite() {
+            self.controller_wall_left_correction_deg
+                .set(controller.wall_left_correction_deg);
+        }
+        if controller.wall_right_correction_deg.is_finite() {
+            self.controller_wall_right_correction_deg
+                .set(controller.wall_right_correction_deg);
+        }
+        if controller.wall_combined_correction_deg.is_finite() {
+            self.controller_wall_combined_correction_deg
+                .set(controller.wall_combined_correction_deg);
+        }
+        self.controller_last_update_us
+            .set(controller.last_update_us);
         self.controller_parse_errors.set(controller.parse_errors);
         self.controller_serial_errors.set(controller.serial_errors);
         self.controller_mode_manual.set(controller.mode_manual);
@@ -441,7 +586,8 @@ impl Metrics {
                 .set(lines.angle_from_vertical_deg as f64);
             self.alignment_confidence.set(lines.confidence as f64);
             self.vertical_spread.set(lines.vertical_spread_deg as f64);
-            self.horizontal_spread.set(lines.horizontal_spread_deg as f64);
+            self.horizontal_spread
+                .set(lines.horizontal_spread_deg as f64);
             self.min_angle.set(lines.min_angle_deg as f64);
             self.max_angle.set(lines.max_angle_deg as f64);
         }
@@ -477,7 +623,10 @@ pub fn run_metrics(rx: Receiver<MetricsMsg>) -> Result<()> {
         tiny_http::Server::http(consts::METRICS_HTTP_BIND)
             .map_err(|error| anyhow::anyhow!(error.to_string()))?,
     );
-    info!("[metrics] Prometheus endpoint -> http://{}/metrics", consts::METRICS_HTTP_BIND);
+    info!(
+        "[metrics] Prometheus endpoint -> http://{}/metrics",
+        consts::METRICS_HTTP_BIND
+    );
 
     let server_clone = Arc::clone(&server);
     thread::spawn(move || serve_metrics(server_clone));

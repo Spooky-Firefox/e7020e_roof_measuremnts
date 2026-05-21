@@ -245,8 +245,8 @@ impl StartupDetector {
 }
 
 pub fn run_startup_gate(
-    rx: Receiver<Mat>,
-    tx: Sender<Mat>,
+    rx: Receiver<(Mat, Instant)>,
+    tx: Sender<(Mat, Instant)>,
     tx_display: Sender<DisplayMsg>,
     tx_metrics: Sender<MetricsMsg>,
     startup_state: SharedStartupState,
@@ -255,7 +255,7 @@ pub fn run_startup_gate(
     let mut detector = StartupDetector::new()?;
     let mut previous_phase = StartupPhase::SearchGreen;
 
-    for frame in rx {
+    for (frame, captured_at) in rx {
         let phase = snapshot(&startup_state).phase;
         if previous_phase == StartupPhase::RoofAlignment && phase == StartupPhase::SearchGreen {
             detector.reset();
@@ -263,7 +263,7 @@ pub fn run_startup_gate(
         previous_phase = phase;
 
         if phase == StartupPhase::RoofAlignment {
-            if tx.send(frame).is_err() {
+            if tx.send((frame, captured_at)).is_err() {
                 break;
             }
             continue;
@@ -299,7 +299,7 @@ pub fn run_startup_gate(
                     "[startup] green circle confirmed; sending mode auto and switching to roof alignment"
                 );
                 mark_handoff(&startup_state, &detected);
-                if tx.send(frame).is_err() {
+                if tx.send((frame, captured_at)).is_err() {
                     break;
                 }
                 continue;

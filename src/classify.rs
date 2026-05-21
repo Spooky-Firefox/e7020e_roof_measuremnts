@@ -182,6 +182,7 @@ impl ClassifyStage {
             edges: msg.edges,
             lines,
             report,
+            captured_at: msg.captured_at,
         }
     }
 }

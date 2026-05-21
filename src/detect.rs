@@ -83,6 +83,7 @@ impl DetectStage {
             frame,
             gray_contrast,
             edges,
+            captured_at,
         } = msg;
 
         let lines = self.detect_lines(
@@ -98,6 +99,7 @@ impl DetectStage {
             gray_contrast,
             edges,
             lines,
+            captured_at,
         })
     }
 }

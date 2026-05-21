@@ -1,5 +1,6 @@
 use opencv::{core::Point, prelude::Mat};
 use serde::{Deserialize, Serialize};
+use std::time::Instant;
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum AxisClass {
@@ -166,6 +167,14 @@ pub struct ControllerTelemetrySnapshot {
     pub distance0_cm: Option<u32>,
     pub distance1_cm: Option<u32>,
     pub distance2_cm: Option<u32>,
+    /// Drive mode: 0 = Startup, 1 = Straight, 2 = Turning
+    pub drive_mode: Option<u8>,
+    /// Left-wall centering correction from controller telemetry [deg]
+    pub wall_left_correction_deg: Option<f32>,
+    /// Right-wall centering correction from controller telemetry [deg]
+    pub wall_right_correction_deg: Option<f32>,
+    /// Combined wall-centering correction from controller telemetry [deg]
+    pub wall_combined_correction_deg: Option<f32>,
     pub connected: bool,
     pub last_update_us: u64,
     pub parse_errors: u64,
@@ -193,6 +202,10 @@ impl Default for ControllerTelemetrySnapshot {
             distance0_cm: None,
             distance1_cm: None,
             distance2_cm: None,
+            drive_mode: None,
+            wall_left_correction_deg: None,
+            wall_right_correction_deg: None,
+            wall_combined_correction_deg: None,
             connected: false,
             last_update_us: 0,
             parse_errors: 0,
@@ -221,6 +234,11 @@ pub struct ControllerMetrics {
     pub distance0_cm: f64,
     pub distance1_cm: f64,
     pub distance2_cm: f64,
+    /// Drive mode: 0 = Startup, 1 = Straight, 2 = Turning
+    pub drive_mode: f64,
+    pub wall_left_correction_deg: f64,
+    pub wall_right_correction_deg: f64,
+    pub wall_combined_correction_deg: f64,
     pub last_update_us: f64,
     pub parse_errors: f64,
     pub serial_errors: f64,
@@ -246,6 +264,10 @@ impl From<&ControllerTelemetrySnapshot> for ControllerMetrics {
             distance0_cm: opt_u32_metric(value.distance0_cm),
             distance1_cm: opt_u32_metric(value.distance1_cm),
             distance2_cm: opt_u32_metric(value.distance2_cm),
+            drive_mode: value.drive_mode.map(|v| v as f64).unwrap_or(f64::NAN),
+            wall_left_correction_deg: opt_f32_metric(value.wall_left_correction_deg),
+            wall_right_correction_deg: opt_f32_metric(value.wall_right_correction_deg),
+            wall_combined_correction_deg: opt_f32_metric(value.wall_combined_correction_deg),
             last_update_us: value.last_update_us as f64,
             parse_errors: value.parse_errors as f64,
             serial_errors: value.serial_errors as f64,
@@ -281,6 +303,7 @@ pub struct EnhanceMsg {
     pub frame: Mat,
     pub gray_contrast: Mat,
     pub edges: Mat,
+    pub captured_at: Instant,
 }
 
 pub struct DetectMsg {
@@ -288,6 +311,7 @@ pub struct DetectMsg {
     pub gray_contrast: Mat,
     pub edges: Mat,
     pub lines: Vec<RawLine>,
+    pub captured_at: Instant,
 }
 
 pub struct ClassifiedMsg {
@@ -296,6 +320,7 @@ pub struct ClassifiedMsg {
     pub edges: Mat,
     pub lines: Vec<ClassifiedLine>,
     pub report: AlignmentReport,
+    pub captured_at: Instant,
 }
 
 pub struct AlignmentMsg {
